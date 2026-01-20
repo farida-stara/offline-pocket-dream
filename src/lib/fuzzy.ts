@@ -91,3 +91,7 @@ export function getBestItemMatches<T extends { id: string; item_name?: string | 
 
   return scored;
 }
+
+export function fuzzyMatch(query: string, target: string, threshold = 0.5): boolean {
+  return similarityScore(query, target) >= threshold;
+}
