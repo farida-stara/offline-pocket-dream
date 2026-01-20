@@ -83,7 +83,7 @@ function findHeaderValue(rows: any[][], keys: string[]): string | null {
       if (!cell) continue;
 
       const norm = normalizeArabic(cell);
-      const hit = normKeys.some((k) => norm.includes(k));
+      const hit = normKeys.some((k) => (norm ?? "").includes(k));
       if (!hit) continue;
 
       // Try same cell like "Invoice No: 123"
@@ -114,6 +114,7 @@ function normalizePurchaseInvoiceNo(raw: string): string {
 }
 
 function findTableHeaderRow(rows: any[][]) {
+  const includes = (hay: string | undefined | null, needle: string) => (hay ?? "").includes(needle);
   const candidates = [
     // Arabic
     { item: ["الصنف", "النوع", "اسم"], qty: ["الكمية", "عدد"], price: ["السعر", "التكلفة", "سعر"], free: ["مجاني"] },
@@ -128,12 +129,12 @@ function findTableHeaderRow(rows: any[][]) {
     const normRow = row.map((c) => normalizeArabic(c));
 
     for (const cand of candidates) {
-      const colItem = normRow.findIndex((h) => cand.item.some((k) => h.includes(normalizeArabic(k))));
-      const colQty = normRow.findIndex((h) => cand.qty.some((k) => h.includes(normalizeArabic(k))));
-      const colPrice = normRow.findIndex((h) => cand.price.some((k) => h.includes(normalizeArabic(k))));
+      const colItem = normRow.findIndex((h) => cand.item.some((k) => includes(h, normalizeArabic(k))));
+      const colQty = normRow.findIndex((h) => cand.qty.some((k) => includes(h, normalizeArabic(k))));
+      const colPrice = normRow.findIndex((h) => cand.price.some((k) => includes(h, normalizeArabic(k))));
 
       if (colItem !== -1 && colQty !== -1 && colPrice !== -1) {
-        const colFree = normRow.findIndex((h) => cand.free.some((k) => h.includes(normalizeArabic(k))));
+        const colFree = normRow.findIndex((h) => cand.free.some((k) => includes(h, normalizeArabic(k))));
         return { headerRowIndex: r, colItem, colQty, colPrice, colFree: colFree === -1 ? null : colFree };
       }
     }
