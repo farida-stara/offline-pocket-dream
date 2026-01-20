@@ -1,0 +1,198 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ArrowRight, Search, Plus, Eye } from "lucide-react";
+import { format } from "date-fns";
+
+const SalesList = () => {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const { data: sales, isLoading } = useQuery({
+    queryKey: ["sales-list", search, dateFrom, dateTo],
+    queryFn: async () => {
+      let query = supabase
+        .from("sales_headers")
+        .select(
+          `
+          *,
+          customer:customers(customer_name, customer_code)
+        `
+        )
+        .order("invoice_date", { ascending: false })
+        .limit(200);
+
+      if (search) {
+        query = query.ilike("invoice_no", `%${search}%`);
+      }
+
+      if (dateFrom) {
+        query = query.gte("invoice_date", dateFrom);
+      }
+
+      if (dateTo) {
+        query = query.lte("invoice_date", dateTo);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  return (
+    <div
+      className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6"
+      dir="rtl"
+    >
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" onClick={() => navigate("/")}>
+              <ArrowRight className="h-5 w-5" />
+            </Button>
+            <h1 className="text-3xl font-bold text-slate-900">
+              سجل فواتير المبيعات
+            </h1>
+          </div>
+          <Button onClick={() => navigate("/sales/new")}>
+            <Plus className="h-4 w-4 ml-2" />
+            فاتورة جديدة
+          </Button>
+        </div>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">فلترة البحث</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">
+                  رقم الفاتورة
+                </label>
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="بحث..."
+                    className="pr-10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">من تاريخ</label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">إلى تاريخ</label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+
+              <div className="flex items-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  مسح الفلتر
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-8 text-center text-muted-foreground">
+                جاري التحميل...
+              </div>
+            ) : !sales?.length ? (
+              <div className="p-8 text-center text-muted-foreground">
+                لا توجد فواتير مبيعات
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">رقم الفاتورة</TableHead>
+                      <TableHead className="text-right">التاريخ</TableHead>
+                      <TableHead className="text-right">العميل</TableHead>
+                      <TableHead className="text-right">طريقة الدفع</TableHead>
+                      <TableHead className="text-left">الإجمالي</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sales.map((s) => (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">
+                          {s.invoice_no}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(s.invoice_date), "yyyy-MM-dd")}
+                        </TableCell>
+                        <TableCell>
+                          {s.customer?.customer_name || "بيع نقدي"}
+                        </TableCell>
+                        <TableCell>{s.payment_method || "-"}</TableCell>
+                        <TableCell className="text-left tabular-nums">
+                          {Number(s.total_amount || 0).toFixed(3)} د.ك
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => navigate(`/sales/${s.id}`)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="mt-4 text-sm text-muted-foreground text-center">
+          إجمالي الفواتير المعروضة: {sales?.length ?? 0}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SalesList;

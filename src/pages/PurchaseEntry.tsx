@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { PurchaseExcelImport } from "@/components/purchases/PurchaseExcelImport";
 import { PurchaseManualEntry } from "@/components/purchases/PurchaseManualEntry";
 import type { PurchaseImportInvoice } from "@/lib/purchaseExcel";
+import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
 
 const PurchaseEntry = () => {
   const navigate = useNavigate();
@@ -50,6 +51,13 @@ const PurchaseEntry = () => {
       const anyMissingItems = invoices.some((inv) => inv.lines.some((l) => !l.item_id));
       if (anyMissingItems) {
         throw new Error("يوجد أسطر بدون صنف (غير مطابق). الرجاء مطابقة جميع الأصناف قبل الحفظ.");
+      }
+
+      // Check for duplicates
+      const invoiceNumbers = invoices.map((inv) => inv.invoice_no);
+      const duplicates = await checkDuplicateInvoices(invoiceNumbers, "PURCHASE");
+      if (duplicates.length > 0) {
+        throw new Error(`تحذير: أرقام الفواتير التالية موجودة مسبقاً: ${duplicates.join(", ")}`);
       }
 
       // Save sequentially to keep logic simple

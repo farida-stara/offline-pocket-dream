@@ -9,6 +9,7 @@ import { Upload, FileSpreadsheet, Check, AlertCircle, Edit2, Trash2, Save } from
 import * as XLSX from "xlsx";
 import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/lib/salesExcel";
 import { fuzzyMatch } from "@/lib/fuzzy";
+import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
 
 interface MatchedLine {
   itemCode: string;
@@ -184,6 +185,13 @@ const SalesExcelImport = () => {
 
       if (toSave.length === 0) {
         throw new Error("لا توجد فواتير جاهزة للحفظ (تأكد من مطابقة جميع الأصناف)");
+      }
+
+      // Check for duplicates
+      const invoiceNumbers = toSave.map((inv) => normalizeSalesInvoiceNo(inv.invoiceNo));
+      const duplicates = await checkDuplicateInvoices(invoiceNumbers, "SALES");
+      if (duplicates.length > 0) {
+        throw new Error(`تحذير: أرقام الفواتير التالية موجودة مسبقاً: ${duplicates.join(", ")}`);
       }
 
       for (const inv of toSave) {
