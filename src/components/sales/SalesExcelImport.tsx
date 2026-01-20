@@ -1,15 +1,41 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Upload, FileSpreadsheet, Check, AlertCircle, Edit2, Trash2, Save } from "lucide-react";
+import { Upload, FileSpreadsheet, Check, AlertCircle, Edit2, Trash2, Save, RotateCcw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/lib/salesExcel";
 import { fuzzyMatch } from "@/lib/fuzzy";
 import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
+
+const LAST_IMPORT_STORAGE_KEY = "sales_invoices:last_import:v1";
+const MAX_CACHED_FILE_BYTES = 4_500_000;
+
+type LastImportCache = {
+  name: string;
+  lastModified: number;
+  dataBase64: string;
+};
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
 
 interface MatchedLine {
   itemCode: string;
@@ -31,6 +57,18 @@ const SalesExcelImport = () => {
   const queryClient = useQueryClient();
   const [previews, setPreviews] = useState<PreviewInvoice[]>([]);
   const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  
+  const [lastImport, setLastImport] = useState<Pick<LastImportCache, "name" | "lastModified"> | null>(() => {
+    try {
+      const raw = localStorage.getItem(LAST_IMPORT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as LastImportCache;
+      return { name: parsed.name, lastModified: parsed.lastModified };
+    } catch {
+      return null;
+    }
+  });
 
   const { data: items } = useQuery({
     queryKey: ["items"],
@@ -107,12 +145,29 @@ const SalesExcelImport = () => {
     [customers, customersMap]
   );
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const triggerFilePick = () => fileInputRef.current?.click();
 
-    const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { type: "array" });
+  const cacheLastImport = (file: File, buf: ArrayBuffer) => {
+    try {
+      if (buf.byteLength > MAX_CACHED_FILE_BYTES) {
+        setLastImport(null);
+        localStorage.removeItem(LAST_IMPORT_STORAGE_KEY);
+        return;
+      }
+      const payload: LastImportCache = {
+        name: file.name,
+        lastModified: file.lastModified,
+        dataBase64: arrayBufferToBase64(buf),
+      };
+      localStorage.setItem(LAST_IMPORT_STORAGE_KEY, JSON.stringify(payload));
+      setLastImport({ name: payload.name, lastModified: payload.lastModified });
+    } catch {
+      setLastImport(null);
+    }
+  };
+
+  const importFromArrayBuffer = (buf: ArrayBuffer) => {
+    const workbook = XLSX.read(buf, { type: "array" });
     const parsed = parseSalesExcel(workbook);
 
     const mapped: PreviewInvoice[] = parsed.map((inv) => {
@@ -133,8 +188,41 @@ const SalesExcelImport = () => {
     });
 
     setPreviews(mapped);
+    
+    if (mapped.length > 0) {
+      toast.success(`تم تحميل ${mapped.length} فاتورة من الملف`);
+    } else {
+      toast.error("لم يتم العثور على فواتير صالحة داخل الملف");
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buf = await file.arrayBuffer();
+      cacheLastImport(file, buf);
+      importFromArrayBuffer(buf);
+    } catch (err: any) {
+      toast.error("فشل الاستيراد: " + (err?.message || "خطأ غير معروف"));
+    }
     e.target.value = "";
-    toast.success(`تم تحميل ${mapped.length} فاتورة من الملف`);
+  };
+
+  const handleReimportLastFile = async () => {
+    try {
+      const raw = localStorage.getItem(LAST_IMPORT_STORAGE_KEY);
+      if (!raw) {
+        toast.info("لا يوجد ملف سابق محفوظ للاستيراد");
+        return;
+      }
+      const cached = JSON.parse(raw) as LastImportCache;
+      const buf = base64ToArrayBuffer(cached.dataBase64);
+      importFromArrayBuffer(buf);
+    } catch (err: any) {
+      toast.error("تعذر استيراد الملف الأخير: " + (err?.message || "خطأ غير معروف"));
+    }
   };
 
   const updateInvoiceField = (idx: number, field: keyof PreviewInvoice, value: any) => {
@@ -263,12 +351,30 @@ const SalesExcelImport = () => {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
-            <Input
+            <input
+              ref={fileInputRef}
               type="file"
               accept=".xlsx,.xls"
+              className="hidden"
               onChange={handleFileUpload}
-              className="max-w-xs"
             />
+            
+            <Button type="button" variant="outline" onClick={triggerFilePick}>
+              <Upload className="h-4 w-4 ml-2" />
+              استيراد من Excel
+            </Button>
+            
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleReimportLastFile()}
+              disabled={!lastImport}
+              title={lastImport ? `آخر ملف: ${lastImport.name}` : "لا يوجد ملف سابق محفوظ"}
+            >
+              <RotateCcw className="h-4 w-4 ml-2" />
+              استيراد الملف الأخير
+            </Button>
+            
             <span className="text-sm text-muted-foreground">
               كل شيت = فاتورة مبيعات منفصلة
             </span>
