@@ -7,7 +7,9 @@ import NotFound from "./pages/NotFound";
 import Dashboard from "./pages/Dashboard";
 import OpeningStock from "./pages/OpeningStock";
 import PurchaseEntry from "./pages/PurchaseEntry";
+import PurchasesList from "./pages/PurchasesList";
 import SalesEntry from "./pages/SalesEntry";
+import SalesList from "./pages/SalesList";
 import InventoryReport from "./pages/InventoryReport";
 import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -42,10 +44,26 @@ const App = () => (
               }
             />
             <Route
+              path="/purchases"
+              element={
+                <ProtectedRoute>
+                  <PurchasesList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/purchases/new"
               element={
                 <ProtectedRoute>
                   <PurchaseEntry />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sales"
+              element={
+                <ProtectedRoute>
+                  <SalesList />
                 </ProtectedRoute>
               }
             />

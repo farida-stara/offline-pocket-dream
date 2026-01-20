@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
 
 type ItemRow = { id: string; item_code?: string | null; item_name?: string | null; cost_price?: number | null };
 
@@ -59,6 +60,12 @@ export function PurchaseManualEntry(props: {
       const totalAmount = validLines.reduce((sum, line) => sum + line.quantity_paid * line.unit_price, 0);
 
       const normalizedInvoiceNo = /^[a-zA-Z]+-/.test(invoiceNo.trim()) ? invoiceNo.trim() : `P-${invoiceNo.trim()}`;
+
+      // Check for duplicate
+      const isDuplicate = await isInvoiceDuplicate(normalizedInvoiceNo, "PURCHASE");
+      if (isDuplicate) {
+        throw new Error(`رقم الفاتورة "${normalizedInvoiceNo}" موجود مسبقاً`);
+      }
 
       const { data: header, error: headerError } = await supabase
         .from("purchase_headers")

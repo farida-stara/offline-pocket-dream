@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
 
 interface SalesLine {
   id: string;
@@ -80,6 +81,12 @@ const SalesManualEntry = () => {
       const normalizedNo = invoiceNo.toUpperCase().startsWith("S-")
         ? invoiceNo
         : `S-${invoiceNo}`;
+
+      // Check for duplicate
+      const isDuplicate = await isInvoiceDuplicate(normalizedNo, "SALES");
+      if (isDuplicate) {
+        throw new Error(`رقم الفاتورة "${normalizedNo}" موجود مسبقاً`);
+      }
 
       const { data: header, error: headerError } = await supabase
         .from("sales_headers")
