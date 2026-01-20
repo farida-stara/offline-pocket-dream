@@ -8,9 +8,12 @@ import Dashboard from "./pages/Dashboard";
 import OpeningStock from "./pages/OpeningStock";
 import PurchaseEntry from "./pages/PurchaseEntry";
 import PurchasesList from "./pages/PurchasesList";
+import PurchaseDetails from "./pages/PurchaseDetails";
 import SalesEntry from "./pages/SalesEntry";
 import SalesList from "./pages/SalesList";
+import SalesDetails from "./pages/SalesDetails";
 import InventoryReport from "./pages/InventoryReport";
+import ItemsMaster from "./pages/ItemsMaster";
 import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -60,6 +63,14 @@ const App = () => (
               }
             />
             <Route
+              path="/purchases/:id"
+              element={
+                <ProtectedRoute>
+                  <PurchaseDetails />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/sales"
               element={
                 <ProtectedRoute>
@@ -72,6 +83,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <SalesEntry />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sales/:id"
+              element={
+                <ProtectedRoute>
+                  <SalesDetails />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/items"
+              element={
+                <ProtectedRoute>
+                  <ItemsMaster />
                 </ProtectedRoute>
               }
             />
