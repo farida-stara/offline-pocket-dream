@@ -471,7 +471,7 @@ const OpeningStock = () => {
                     e.currentTarget.value = "";
                   }}
                 />
-                <Button type="button" variant="outline" onClick={triggerFilePick} disabled={!items?.length}>
+                <Button type="button" variant="outline" onClick={triggerFilePick}>
                   <Upload className="h-4 w-4 ml-2" />
                   استيراد من Excel
                 </Button>
