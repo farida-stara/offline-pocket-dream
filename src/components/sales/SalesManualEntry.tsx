@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
@@ -22,8 +23,14 @@ const SalesManualEntry = () => {
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [paymentMethod, setPaymentMethod] = useState("نقد");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "transfer" | "credit" | "other">("cash");
+  const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
+
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
+  const [newCustomerCode, setNewCustomerCode] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [lines, setLines] = useState<SalesLine[]>([
     { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 },
   ]);
@@ -88,6 +95,8 @@ const SalesManualEntry = () => {
         throw new Error(`رقم الفاتورة "${normalizedNo}" موجود مسبقاً`);
       }
 
+      const finalPaymentMethod = paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
+
       const { data: header, error: headerError } = await supabase
         .from("sales_headers")
         .insert({
@@ -95,7 +104,7 @@ const SalesManualEntry = () => {
           customer_id: customerId || null,
           invoice_date: invoiceDate,
           total_amount: totalAmount,
-          payment_method: paymentMethod,
+          payment_method: finalPaymentMethod || null,
           notes: notes,
         })
         .select()
@@ -135,10 +144,41 @@ const SalesManualEntry = () => {
     setInvoiceNo("");
     setCustomerId("");
     setInvoiceDate(new Date().toISOString().split("T")[0]);
-    setPaymentMethod("نقد");
+    setPaymentMethod("cash");
+    setPaymentMethodOther("");
     setNotes("");
     setLines([{ id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 }]);
   };
+
+  const createCustomerMutation = useMutation({
+    mutationFn: async () => {
+      const code = newCustomerCode.trim();
+      const name = newCustomerName.trim();
+      if (!code || !name) throw new Error("الرجاء إدخال كود واسم العميل");
+
+      const { data, error } = await supabase
+        .from("customers")
+        .insert({
+          customer_code: code,
+          customer_name: name,
+          phone: newCustomerPhone.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success("تمت إضافة العميل");
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      setCustomerDialogOpen(false);
+      setNewCustomerCode("");
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      if (data?.id) setCustomerId(data.id);
+    },
+    onError: (e: any) => toast.error("تعذر إضافة العميل: " + (e?.message || "خطأ غير معروف")),
+  });
 
   const addLine = () => {
     setLines([
@@ -166,6 +206,7 @@ const SalesManualEntry = () => {
   const lineCount = lines.filter((l) => l.item_id && l.quantity > 0).length;
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>إدخال فاتورة مبيعات يدوياً</CardTitle>
@@ -190,18 +231,23 @@ const SalesManualEntry = () => {
 
             <div>
               <label className="text-sm font-medium mb-1 block">العميل</label>
-              <select
-                className="w-full p-2 border rounded-md"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-              >
-                <option value="">بيع نقدي</option>
-                {customers?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.customer_code} - {c.customer_name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                >
+                  <option value="">بيع نقدي</option>
+                  {customers?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.customer_code} - {c.customer_name}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" variant="outline" onClick={() => setCustomerDialogOpen(true)}>
+                  إضافة
+                </Button>
+              </div>
             </div>
 
             <div>
@@ -219,11 +265,22 @@ const SalesManualEntry = () => {
               <label className="text-sm font-medium mb-1 block">
                 طريقة الدفع
               </label>
-              <Input
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                placeholder="نقد / بطاقة / آجل"
-              />
+              <div className="space-y-2">
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as any)}
+                >
+                  <option value="cash">نقد</option>
+                  <option value="card">بطاقة</option>
+                  <option value="transfer">تحويل</option>
+                  <option value="credit">آجل</option>
+                  <option value="other">أخرى…</option>
+                </select>
+                {paymentMethod === "other" && (
+                  <Input value={paymentMethodOther} onChange={(e) => setPaymentMethodOther(e.target.value)} placeholder="اكتب طريقة الدفع" />
+                )}
+              </div>
             </div>
           </div>
 
@@ -351,6 +408,39 @@ const SalesManualEntry = () => {
         </div>
       </CardContent>
     </Card>
+
+    <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+      <DialogContent dir="rtl">
+        <DialogHeader>
+          <DialogTitle>إضافة عميل جديد</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium mb-1 block">كود العميل *</label>
+            <Input value={newCustomerCode} onChange={(e) => setNewCustomerCode(e.target.value)} placeholder="CUST-001" />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">اسم العميل *</label>
+            <Input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="اسم العميل" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium mb-1 block">الهاتف</label>
+            <Input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setCustomerDialogOpen(false)}>
+            إلغاء
+          </Button>
+          <Button type="button" onClick={() => createCustomerMutation.mutate()} disabled={createCustomerMutation.isPending}>
+            {createCustomerMutation.isPending ? "جاري الحفظ..." : "حفظ"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

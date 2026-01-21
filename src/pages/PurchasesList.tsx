@@ -30,7 +30,8 @@ const PurchasesList = () => {
         .select(
           `
           *,
-          supplier:suppliers(supplier_name, supplier_code)
+           supplier:suppliers(supplier_name, supplier_code),
+           lines:purchase_lines(quantity_paid, quantity_free, item:items_master(selling_price))
         `
         )
         .order("invoice_date", { ascending: false })
@@ -150,11 +151,21 @@ const PurchasesList = () => {
                       <TableHead className="text-right">المورد</TableHead>
                       <TableHead className="text-right">طريقة الدفع</TableHead>
                       <TableHead className="text-left">الإجمالي</TableHead>
+                      <TableHead className="text-left">إجمالي البيع المتوقع</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {purchases.map((p) => (
+                      (() => {
+                        const expected = (p.lines ?? []).reduce((sum: number, l: any) => {
+                          const qty = Number(l?.quantity_paid ?? 0) + Number(l?.quantity_free ?? 0);
+                          const sp = Number(l?.item?.selling_price ?? 0);
+                          if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+                          return sum + qty * sp;
+                        }, 0);
+
+                        return (
                       <TableRow key={p.id}>
                         <TableCell className="font-medium">
                           {p.invoice_no}
@@ -169,6 +180,9 @@ const PurchasesList = () => {
                         <TableCell className="text-left tabular-nums">
                           {Number(p.total_amount || 0).toFixed(3)} د.ك
                         </TableCell>
+                        <TableCell className="text-left tabular-nums">
+                          {expected.toFixed(3)} د.ك
+                        </TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
@@ -181,6 +195,8 @@ const PurchasesList = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
+                        );
+                      })()
                     ))}
                   </TableBody>
                 </Table>

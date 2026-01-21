@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
@@ -29,8 +30,14 @@ export function PurchaseManualEntry(props: {
   const [supplierId, setSupplierId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
   const [marginPercent, setMarginPercent] = useState<number>(0);
+
+  const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
+  const [newSupplierCode, setNewSupplierCode] = useState("");
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierPhone, setNewSupplierPhone] = useState("");
 
   const [lines, setLines] = useState<PurchaseLine[]>([
     { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 },
@@ -67,6 +74,8 @@ export function PurchaseManualEntry(props: {
         throw new Error(`رقم الفاتورة "${normalizedInvoiceNo}" موجود مسبقاً`);
       }
 
+      const finalPaymentMethod = paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
+
       const { data: header, error: headerError } = await supabase
         .from("purchase_headers")
         .insert({
@@ -74,7 +83,7 @@ export function PurchaseManualEntry(props: {
           supplier_id: supplierId,
           invoice_date: invoiceDate,
           total_amount: totalAmount,
-          payment_method: paymentMethod,
+          payment_method: finalPaymentMethod || null,
           notes,
         })
         .select()
@@ -111,6 +120,7 @@ export function PurchaseManualEntry(props: {
       setSupplierId("");
       setInvoiceDate(new Date().toISOString().split("T")[0]);
       setPaymentMethod("cash");
+      setPaymentMethodOther("");
       setNotes("");
       setMarginPercent(0);
       setLines([{ id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 }]);
@@ -132,7 +142,38 @@ export function PurchaseManualEntry(props: {
     setLines(lines.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
   };
 
+  const createSupplierMutation = useMutation({
+    mutationFn: async () => {
+      const code = newSupplierCode.trim();
+      const name = newSupplierName.trim();
+      if (!code || !name) throw new Error("الرجاء إدخال كود واسم المورد");
+
+      const { data, error } = await supabase
+        .from("suppliers")
+        .insert({
+          supplier_code: code,
+          supplier_name: name,
+          phone: newSupplierPhone.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success("تمت إضافة المورد");
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      setSupplierDialogOpen(false);
+      setNewSupplierCode("");
+      setNewSupplierName("");
+      setNewSupplierPhone("");
+      if (data?.id) setSupplierId(data.id);
+    },
+    onError: (e: any) => toast.error("تعذر إضافة المورد: " + (e?.message || "خطأ غير معروف")),
+  });
+
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>فاتورة مشتريات (يدوي)</CardTitle>
@@ -147,14 +188,19 @@ export function PurchaseManualEntry(props: {
 
             <div>
               <label className="text-sm font-medium mb-1 block">المورد *</label>
-              <select className="w-full p-2 border rounded-md" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-                <option value="">اختر المورد</option>
-                {suppliers?.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.supplier_code} - {supplier.supplier_name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select className="w-full p-2 border rounded-md" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                  <option value="">اختر المورد</option>
+                  {suppliers?.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.supplier_code} - {supplier.supplier_name}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" variant="outline" onClick={() => setSupplierDialogOpen(true)}>
+                  إضافة
+                </Button>
+              </div>
             </div>
 
             <div>
@@ -171,7 +217,18 @@ export function PurchaseManualEntry(props: {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">طريقة الدفع</label>
-              <Input value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} placeholder="cash" />
+              <div className="space-y-2">
+                <select className="w-full p-2 border rounded-md" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                  <option value="cash">نقد</option>
+                  <option value="card">بطاقة</option>
+                  <option value="transfer">تحويل</option>
+                  <option value="credit">آجل</option>
+                  <option value="other">أخرى…</option>
+                </select>
+                {paymentMethod === "other" && (
+                  <Input value={paymentMethodOther} onChange={(e) => setPaymentMethodOther(e.target.value)} placeholder="اكتب طريقة الدفع" />
+                )}
+              </div>
             </div>
 
             <div>
@@ -257,5 +314,38 @@ export function PurchaseManualEntry(props: {
         </div>
       </CardContent>
     </Card>
+
+    <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
+      <DialogContent dir="rtl">
+        <DialogHeader>
+          <DialogTitle>إضافة مورد جديد</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium mb-1 block">كود المورد *</label>
+            <Input value={newSupplierCode} onChange={(e) => setNewSupplierCode(e.target.value)} placeholder="SUP-001" />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">اسم المورد *</label>
+            <Input value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} placeholder="اسم المورد" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium mb-1 block">الهاتف</label>
+            <Input value={newSupplierPhone} onChange={(e) => setNewSupplierPhone(e.target.value)} placeholder="" />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setSupplierDialogOpen(false)}>
+            إلغاء
+          </Button>
+          <Button type="button" onClick={() => createSupplierMutation.mutate()} disabled={createSupplierMutation.isPending}>
+            {createSupplierMutation.isPending ? "جاري الحفظ..." : "حفظ"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

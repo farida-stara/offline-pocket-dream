@@ -42,6 +42,13 @@ const PurchaseEntry = () => {
     mutationFn: async () => {
       if (!invoices.length) throw new Error("لا توجد فواتير للحفظ");
 
+      const normalizePurchaseInvoiceNo = (raw: string) => {
+        const v = (raw ?? "").trim();
+        if (!v) return v;
+        // enforce P- prefix for purchases (keeps uniqueness clean across the system)
+        return /^[a-zA-Z]+-/.test(v) ? v : `P-${v}`;
+      };
+
       // Basic validation
       const invalidInvoice = invoices.find((inv) => !inv.invoice_no || !inv.invoice_date || !inv.supplier_id);
       if (invalidInvoice) {
@@ -54,7 +61,7 @@ const PurchaseEntry = () => {
       }
 
       // Check for duplicates
-      const invoiceNumbers = invoices.map((inv) => inv.invoice_no);
+      const invoiceNumbers = invoices.map((inv) => normalizePurchaseInvoiceNo(inv.invoice_no));
       const duplicates = await checkDuplicateInvoices(invoiceNumbers, "PURCHASE");
       if (duplicates.length > 0) {
         throw new Error(`تحذير: أرقام الفواتير التالية موجودة مسبقاً: ${duplicates.join(", ")}`);
@@ -62,9 +69,10 @@ const PurchaseEntry = () => {
 
       // Save sequentially to keep logic simple
       for (const inv of invoices) {
+        const normalizedInvoiceNo = normalizePurchaseInvoiceNo(inv.invoice_no);
         const validLines = inv.lines.filter((l) => l.item_id && l.quantity_paid > 0 && l.unit_price > 0);
         if (!validLines.length) {
-          throw new Error(`لا يوجد أسطر صالحة داخل الفاتورة: ${inv.invoice_no}`);
+          throw new Error(`لا يوجد أسطر صالحة داخل الفاتورة: ${normalizedInvoiceNo}`);
         }
 
         const totalAmount = validLines.reduce((sum, l) => sum + Number(l.quantity_paid) * Number(l.unit_price), 0);
@@ -72,7 +80,7 @@ const PurchaseEntry = () => {
         const { data: header, error: headerError } = await supabase
           .from("purchase_headers")
           .insert({
-            invoice_no: inv.invoice_no,
+            invoice_no: normalizedInvoiceNo,
             supplier_id: inv.supplier_id,
             invoice_date: inv.invoice_date,
             total_amount: totalAmount,
@@ -99,7 +107,7 @@ const PurchaseEntry = () => {
         if (linesError) throw linesError;
 
         await supabase.from("invoice_register").insert({
-          invoice_no: inv.invoice_no,
+          invoice_no: normalizedInvoiceNo,
           invoice_type: "PURCHASE",
         });
       }
