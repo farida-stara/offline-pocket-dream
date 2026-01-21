@@ -3,13 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Upload, RotateCcw, Wand2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 
 import { getBestItemMatches, normalizeArabic } from "@/lib/fuzzy";
 import { parsePurchaseWorkbook, type PurchaseImportInvoice, type PurchaseImportLine } from "@/lib/purchaseExcel";
+import { ItemPickerDialog } from "@/components/items/ItemPickerDialog";
 
 type ItemRow = { id: string; item_code?: string | null; item_name?: string | null };
 type SupplierRow = { id: string; supplier_code?: string | null; supplier_name?: string | null };
@@ -63,7 +62,7 @@ export function PurchaseExcelImport(props: {
 
   const [matcherOpen, setMatcherOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [activePick, setActivePick] = useState<{ invoiceId: string; lineId: string } | null>(null);
+  const [activePick, setActivePick] = useState<{ invoiceId: string; lineId: string; sourceName?: string } | null>(null);
   const [supplierAll, setSupplierAll] = useState<string>("");
 
   const itemsIndex = useMemo(() => {
@@ -201,7 +200,9 @@ export function PurchaseExcelImport(props: {
   };
 
   const openPickerForLine = (invoiceId: string, lineId: string) => {
-    setActivePick({ invoiceId, lineId });
+    const inv = invoices.find((x) => x.id === invoiceId);
+    const line = inv?.lines.find((l) => l.id === lineId);
+    setActivePick({ invoiceId, lineId, sourceName: line?.source_name ?? "" });
     setPickerOpen(true);
   };
 
@@ -394,27 +395,19 @@ export function PurchaseExcelImport(props: {
         </Dialog>
 
         {/* Picker */}
-        <CommandDialog open={pickerOpen} onOpenChange={setPickerOpen}>
-          <CommandInput placeholder="ابحث عن صنف…" />
-          <CommandList>
-            <CommandEmpty>لا توجد نتائج</CommandEmpty>
-            <CommandGroup heading="الأصناف">
-              {(items ?? []).slice(0, 200).map((it) => (
-                <CommandItem
-                  key={it.id}
-                  value={`${it.item_code ?? ""} ${it.item_name ?? ""}`}
-                  onSelect={() => {
-                    if (!activePick) return;
-                    applyItemToLine(activePick.invoiceId, activePick.lineId, it.id);
-                    setPickerOpen(false);
-                  }}
-                >
-                  {it.item_code ? `${it.item_code} - ${it.item_name}` : it.item_name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </CommandDialog>
+        <ItemPickerDialog
+          open={pickerOpen}
+          onOpenChange={(open) => {
+            setPickerOpen(open);
+            if (!open) setActivePick(null);
+          }}
+          items={items}
+          suggestQuery={activePick?.sourceName}
+          onPick={(itemId) => {
+            if (!activePick) return;
+            applyItemToLine(activePick.invoiceId, activePick.lineId, itemId);
+          }}
+        />
 
         {/* Preview */}
         {invoices.length > 0 && (

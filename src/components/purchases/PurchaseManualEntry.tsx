@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
+import { ItemPickerDialog } from "@/components/items/ItemPickerDialog";
 
 type ItemRow = { id: string; item_code?: string | null; item_name?: string | null; cost_price?: number | null };
 
@@ -42,6 +43,9 @@ export function PurchaseManualEntry(props: {
   const [lines, setLines] = useState<PurchaseLine[]>([
     { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 },
   ]);
+
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
+  const [activeLineId, setActiveLineId] = useState<string | null>(null);
 
   const itemsById = useMemo(() => {
     const map = new Map<string, any>();
@@ -257,14 +261,25 @@ export function PurchaseManualEntry(props: {
 
                 <div className="col-span-4">
                   <label className="text-sm font-medium mb-1 block">العنصر *</label>
-                  <select className="w-full p-2 border rounded-md" value={line.item_id} onChange={(e) => updateLine(line.id, "item_id", e.target.value)}>
-                    <option value="">اختر العنصر</option>
-                    {items?.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.item_code} - {item.item_name}
-                      </option>
-                    ))}
-                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-between"
+                    onClick={() => {
+                      setActiveLineId(line.id);
+                      setItemPickerOpen(true);
+                    }}
+                  >
+                    <span className="truncate">
+                      {line.item_id
+                        ? (() => {
+                            const it = itemsById.get(line.item_id);
+                            return it?.item_code ? `${it.item_code} - ${it.item_name}` : it?.item_name || "";
+                          })()
+                        : "اختر الصنف (بحث بالكود/الاسم)"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">بحث</span>
+                  </Button>
                 </div>
 
                 <div className="col-span-2">
@@ -353,6 +368,27 @@ export function PurchaseManualEntry(props: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ItemPickerDialog
+      open={itemPickerOpen}
+      onOpenChange={(open) => {
+        setItemPickerOpen(open);
+        if (!open) setActiveLineId(null);
+      }}
+      items={items}
+      suggestQuery={
+        activeLineId
+          ? (() => {
+              const l = lines.find((x) => x.id === activeLineId);
+              return l?.item_id ? (itemsById.get(l.item_id)?.item_name ?? "") : "";
+            })()
+          : ""
+      }
+      onPick={(itemId) => {
+        if (!activeLineId) return;
+        updateLine(activeLineId, "item_id", itemId);
+      }}
+    />
     </>
   );
 }
