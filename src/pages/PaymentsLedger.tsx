@@ -35,9 +35,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type InvoiceType = "SALE" | "PURCHASE";
 type PaymentMethod = "cash" | "credit" | "knet" | "bank_transfer" | "other";
+type EntryContext = "invoice" | "rep_settlement";
 
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   cash: "كاش",
@@ -56,6 +58,8 @@ export default function PaymentsLedger() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const [entryContext, setEntryContext] = useState<EntryContext>("invoice");
+
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState<InvoiceType | "all">("all");
@@ -67,6 +71,7 @@ export default function PaymentsLedger() {
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("PURCHASE");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [partyId, setPartyId] = useState<string>("");
+  const [repId, setRepId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [paidAt, setPaidAt] = useState<string>(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -76,6 +81,19 @@ export default function PaymentsLedger() {
   const [notes, setNotes] = useState("");
 
   const partyType = invoiceType === "PURCHASE" ? "supplier" : "customer";
+
+  const { data: salesReps } = useQuery({
+    queryKey: ["sales-reps"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales_reps")
+        .select("id, rep_name")
+        .eq("is_active", true)
+        .order("rep_name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   const { data: suppliers } = useQuery({
     queryKey: ["suppliers"],
@@ -111,17 +129,22 @@ export default function PaymentsLedger() {
   }, [customers, suppliers, partyType]);
 
   const { data: payments, isLoading } = useQuery({
-    queryKey: ["payment-ledger", dateFrom, dateTo, invoiceTypeFilter, methodFilter],
+    queryKey: ["payment-ledger", entryContext, dateFrom, dateTo, invoiceTypeFilter, methodFilter, repId],
     queryFn: async () => {
       let q = supabase
         .from("payment_ledger")
         .select("*")
+        .eq("entry_context", entryContext)
         .order("paid_at", { ascending: false })
         .limit(200);
 
       if (dateFrom) q = q.gte("paid_at", `${dateFrom}T00:00:00`);
       if (dateTo) q = q.lte("paid_at", `${dateTo}T23:59:59`);
-      if (invoiceTypeFilter !== "all") q = q.eq("invoice_type", invoiceTypeFilter);
+      if (entryContext === "invoice") {
+        if (invoiceTypeFilter !== "all") q = q.eq("invoice_type", invoiceTypeFilter);
+      } else {
+        if (repId) q = q.eq("rep_id", repId);
+      }
       if (methodFilter !== "all") q = q.eq("payment_method", methodFilter);
 
       const { data, error } = await q;
@@ -134,28 +157,53 @@ export default function PaymentsLedger() {
     mutationFn: async () => {
       const amt = toNumber(amount);
       if (amt <= 0) throw new Error("أدخل مبلغ صحيح");
-      if (!partyId) throw new Error(invoiceType === "PURCHASE" ? "اختر المورد" : "اختر الزبون");
+
+      if (entryContext === "invoice") {
+        if (!partyId) throw new Error(invoiceType === "PURCHASE" ? "اختر المورد" : "اختر الزبون");
+      } else {
+        if (!repId) throw new Error("اختر المندوب");
+      }
 
       const method: PaymentMethod = paymentMethod;
       if (method === "other" && !otherMethodName.trim()) throw new Error("اكتب اسم طريقة الدفع الأخرى");
 
-      const { error } = await supabase.from("payment_ledger").insert({
-        invoice_type: invoiceType,
-        invoice_no: invoiceNo.trim() || null,
-        party_type: partyType,
-        party_id: partyId,
-        amount: amt,
-        payment_method: method,
-        other_method_name: method === "other" ? otherMethodName.trim() : null,
-        paid_at: new Date(paidAt).toISOString(),
-        reference_no: referenceNo.trim() || null,
-        bank_details: bankDetails.trim() || null,
-        notes: notes.trim() || null,
-      });
+      const { error } = await supabase.from("payment_ledger").insert(
+        entryContext === "invoice"
+          ? {
+              entry_context: "invoice",
+              invoice_type: invoiceType,
+              invoice_no: invoiceNo.trim() || null,
+              party_type: partyType,
+              party_id: partyId,
+              amount: amt,
+              payment_method: method,
+              other_method_name: method === "other" ? otherMethodName.trim() : null,
+              paid_at: new Date(paidAt).toISOString(),
+              reference_no: referenceNo.trim() || null,
+              bank_details: bankDetails.trim() || null,
+              notes: notes.trim() || null,
+            }
+          : {
+              entry_context: "rep_settlement",
+              invoice_type: "REP",
+              invoice_id: null,
+              invoice_no: null,
+              party_type: "rep",
+              party_id: null,
+              rep_id: repId,
+              amount: amt,
+              payment_method: method,
+              other_method_name: method === "other" ? otherMethodName.trim() : null,
+              paid_at: new Date(paidAt).toISOString(),
+              reference_no: referenceNo.trim() || null,
+              bank_details: bankDetails.trim() || null,
+              notes: notes.trim() || null,
+            }
+      );
       if (error) throw error;
     },
     onSuccess: async () => {
-      toast.success("تم تسجيل الدفعة");
+      toast.success(entryContext === "invoice" ? "تم تسجيل الدفعة" : "تم تسجيل تسوية المندوب");
       setOpenAdd(false);
       setInvoiceNo("");
       setAmount("");
@@ -163,6 +211,7 @@ export default function PaymentsLedger() {
       setBankDetails("");
       setNotes("");
       setOtherMethodName("");
+      setRepId("");
       await queryClient.invalidateQueries({ queryKey: ["payment-ledger"] });
     },
     onError: (e: any) => toast.error(e?.message || "تعذر تسجيل الدفعة"),
@@ -196,7 +245,7 @@ export default function PaymentsLedger() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 ml-2" />
-                إضافة دفعة
+                {entryContext === "invoice" ? "إضافة دفعة" : "إضافة تسوية مندوب"}
               </Button>
             </DialogTrigger>
             <DialogContent dir="rtl" className="max-w-2xl">
@@ -208,46 +257,66 @@ export default function PaymentsLedger() {
               </DialogHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label>نوع الفاتورة</Label>
-                  <Select
-                    value={invoiceType}
-                    onValueChange={(v) => {
-                      const next = v as InvoiceType;
-                      setInvoiceType(next);
-                      setPartyId("");
-                    }}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="اختر" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PURCHASE">مشتريات</SelectItem>
-                      <SelectItem value="SALE">مبيعات</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {entryContext === "invoice" ? (
+                  <>
+                    <div>
+                      <Label>نوع الفاتورة</Label>
+                      <Select
+                        value={invoiceType}
+                        onValueChange={(v) => {
+                          const next = v as InvoiceType;
+                          setInvoiceType(next);
+                          setPartyId("");
+                        }}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="اختر" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PURCHASE">مشتريات</SelectItem>
+                          <SelectItem value="SALE">مبيعات</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <div>
-                  <Label>رقم الفاتورة (اختياري)</Label>
-                  <Input className="mt-1" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
-                </div>
+                    <div>
+                      <Label>رقم الفاتورة (اختياري)</Label>
+                      <Input className="mt-1" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
+                    </div>
 
-                <div>
-                  <Label>{partyType === "supplier" ? "المورد" : "الزبون"}</Label>
-                  <Select value={partyId} onValueChange={setPartyId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="اختر" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {partyOptions.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <div>
+                      <Label>{partyType === "supplier" ? "المورد" : "الزبون"}</Label>
+                      <Select value={partyId} onValueChange={setPartyId}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="اختر" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {partyOptions.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <Label>المندوب</Label>
+                    <Select value={repId} onValueChange={setRepId}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="اختر" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(salesReps ?? []).map((r: any) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.rep_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div>
                   <Label>المبلغ</Label>
@@ -315,6 +384,15 @@ export default function PaymentsLedger() {
             <CardTitle className="text-lg">فلترة السجل</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4">
+              <Tabs value={entryContext} onValueChange={(v) => setEntryContext(v as EntryContext)}>
+                <TabsList className="grid w-full max-w-md grid-cols-2">
+                  <TabsTrigger value="invoice">مدفوعات فواتير</TabsTrigger>
+                  <TabsTrigger value="rep_settlement">تسوية مندوب</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>من تاريخ</Label>
@@ -324,19 +402,38 @@ export default function PaymentsLedger() {
                 <Label>إلى تاريخ</Label>
                 <Input className="mt-1" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
-              <div>
-                <Label>نوع الفاتورة</Label>
-                <Select value={invoiceTypeFilter} onValueChange={(v) => setInvoiceTypeFilter(v as any)}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="الكل" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">الكل</SelectItem>
-                    <SelectItem value="PURCHASE">مشتريات</SelectItem>
-                    <SelectItem value="SALE">مبيعات</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {entryContext === "invoice" ? (
+                <div>
+                  <Label>نوع الفاتورة</Label>
+                  <Select value={invoiceTypeFilter} onValueChange={(v) => setInvoiceTypeFilter(v as any)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="الكل" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">الكل</SelectItem>
+                      <SelectItem value="PURCHASE">مشتريات</SelectItem>
+                      <SelectItem value="SALE">مبيعات</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div>
+                  <Label>المندوب</Label>
+                  <Select value={repId} onValueChange={setRepId}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="الكل" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">الكل</SelectItem>
+                      {(salesReps ?? []).map((r: any) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.rep_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label>طريقة الدفع</Label>
                 <Select value={methodFilter} onValueChange={(v) => setMethodFilter(v as any)}>
@@ -363,6 +460,7 @@ export default function PaymentsLedger() {
                     setDateTo("");
                     setInvoiceTypeFilter("all");
                     setMethodFilter("all");
+                    setRepId("");
                   }}
                 >
                   مسح الفلاتر
@@ -385,7 +483,7 @@ export default function PaymentsLedger() {
                     <TableRow>
                       <TableHead className="text-right">التاريخ</TableHead>
                       <TableHead className="text-right">النوع</TableHead>
-                      <TableHead className="text-right">رقم الفاتورة</TableHead>
+                      <TableHead className="text-right">المرجع</TableHead>
                       <TableHead className="text-right">طريقة الدفع</TableHead>
                       <TableHead className="text-left">المبلغ</TableHead>
                       <TableHead className="text-right">مرجع</TableHead>
@@ -399,9 +497,17 @@ export default function PaymentsLedger() {
                           {p.paid_at ? format(new Date(p.paid_at), "yyyy-MM-dd HH:mm") : "-"}
                         </TableCell>
                         <TableCell>
-                          {p.invoice_type === "PURCHASE" ? "مشتريات" : "مبيعات"}
+                          {p.entry_context === "rep_settlement"
+                            ? "تسوية مندوب"
+                            : p.invoice_type === "PURCHASE"
+                              ? "مشتريات"
+                              : "مبيعات"}
                         </TableCell>
-                        <TableCell className="font-medium">{p.invoice_no || "-"}</TableCell>
+                        <TableCell className="font-medium">
+                          {p.entry_context === "rep_settlement"
+                            ? (salesReps ?? []).find((r: any) => r.id === p.rep_id)?.rep_name || "-"
+                            : p.invoice_no || "-"}
+                        </TableCell>
                         <TableCell>
                           {p.payment_method === "other"
                             ? `أخرى: ${p.other_method_name || "-"}`

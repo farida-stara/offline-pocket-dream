@@ -194,6 +194,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           currency: string
+          entry_context: string
           id: string
           invoice_id: string | null
           invoice_no: string | null
@@ -205,6 +206,7 @@ export type Database = {
           party_type: string
           payment_method: string
           reference_no: string | null
+          rep_id: string | null
           updated_at: string
         }
         Insert: {
@@ -213,6 +215,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          entry_context?: string
           id?: string
           invoice_id?: string | null
           invoice_no?: string | null
@@ -224,6 +227,7 @@ export type Database = {
           party_type: string
           payment_method: string
           reference_no?: string | null
+          rep_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -232,6 +236,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          entry_context?: string
           id?: string
           invoice_id?: string | null
           invoice_no?: string | null
@@ -243,9 +248,18 @@ export type Database = {
           party_type?: string
           payment_method?: string
           reference_no?: string | null
+          rep_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "payment_ledger_rep_id_fkey"
+            columns: ["rep_id"]
+            isOneToOne: false
+            referencedRelation: "sales_reps"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_headers: {
         Row: {
@@ -415,6 +429,8 @@ export type Database = {
           notes: string | null
           payment_method: string | null
           payment_status: string | null
+          rep_collects: boolean
+          sales_rep_id: string | null
           total_amount: number | null
           updated_at: string | null
         }
@@ -427,6 +443,8 @@ export type Database = {
           notes?: string | null
           payment_method?: string | null
           payment_status?: string | null
+          rep_collects?: boolean
+          sales_rep_id?: string | null
           total_amount?: number | null
           updated_at?: string | null
         }
@@ -439,6 +457,8 @@ export type Database = {
           notes?: string | null
           payment_method?: string | null
           payment_status?: string | null
+          rep_collects?: boolean
+          sales_rep_id?: string | null
           total_amount?: number | null
           updated_at?: string | null
         }
@@ -448,6 +468,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_headers_sales_rep_id_fkey"
+            columns: ["sales_rep_id"]
+            isOneToOne: false
+            referencedRelation: "sales_reps"
             referencedColumns: ["id"]
           },
         ]
@@ -502,6 +529,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sales_reps: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          phone: string | null
+          rep_code: string | null
+          rep_name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          phone?: string | null
+          rep_code?: string | null
+          rep_name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          phone?: string | null
+          rep_code?: string | null
+          rep_name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       suppliers: {
         Row: {
