@@ -418,13 +418,28 @@ export function PurchaseExcelImport(props: {
               const qtyTotal = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0), 0);
               const total = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0), 0);
               const missingSupplier = !inv.supplier_id;
+              const hasUnmatched = inv.lines.some((l) => !l.item_id);
+
+              const cardClassName = [
+                missingSupplier ? "ring-1 ring-destructive/40" : "",
+                !missingSupplier && hasUnmatched ? "ring-1 ring-accent/40" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
 
               return (
-                <Card key={inv.id} className={missingSupplier ? "ring-1 ring-destructive/40" : undefined}>
+                <Card key={inv.id} className={cardClassName || undefined}>
                   <CardHeader>
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
-                        <CardTitle className="text-base">{inv.invoice_no}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base">{inv.invoice_no}</CardTitle>
+                          {hasUnmatched && !missingSupplier && (
+                            <span className="inline-flex items-center rounded-md border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] text-foreground">
+                              بحاجة لمراجعة أصناف
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">Sheet: {inv.source_sheet}</div>
                       </div>
 
