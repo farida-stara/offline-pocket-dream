@@ -555,6 +555,10 @@ export type Database = {
     Functions: {
       is_owner: { Args: { _user_id: string }; Returns: boolean }
       owner_is_unset: { Args: never; Returns: boolean }
+      recompute_invoice_payment_status: {
+        Args: { _invoice_id: string; _invoice_type: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
