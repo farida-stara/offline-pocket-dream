@@ -297,6 +297,7 @@ export type Database = {
       purchase_lines: {
         Row: {
           created_at: string | null
+          discount_percent: number
           id: string
           item_id: string
           line_no: number
@@ -309,6 +310,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          discount_percent?: number
           id?: string
           item_id: string
           line_no: number
@@ -321,6 +323,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          discount_percent?: number
           id?: string
           item_id?: string
           line_no?: number
@@ -351,6 +354,7 @@ export type Database = {
       purchase_unmatched_lines: {
         Row: {
           created_at: string
+          discount_percent: number
           id: string
           item_id: string | null
           line_no: number
@@ -362,6 +366,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          discount_percent?: number
           id?: string
           item_id?: string | null
           line_no: number
@@ -373,6 +378,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          discount_percent?: number
           id?: string
           item_id?: string | null
           line_no?: number
