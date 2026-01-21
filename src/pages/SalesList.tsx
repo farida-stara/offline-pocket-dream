@@ -1,10 +1,20 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -13,14 +23,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Search, Plus, Eye } from "lucide-react";
+import { ArrowRight, Search, Plus, Eye, Trash2 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import { deleteInvoice } from "@/lib/invoiceDelete";
 
 const SalesList = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; invoiceNo: string } | null>(null);
 
   const { data: sales, isLoading } = useQuery({
     queryKey: ["sales-list", search, dateFrom, dateTo],
@@ -53,6 +67,23 @@ const SalesList = () => {
       if (error) throw error;
       return data;
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!deleteTarget) return;
+      await deleteInvoice({
+        id: deleteTarget.id,
+        invoiceNo: deleteTarget.invoiceNo,
+        type: "SALES",
+      });
+    },
+    onSuccess: async () => {
+      toast.success("تم حذف الفاتورة");
+      setDeleteTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ["sales-list"] });
+    },
+    onError: (e: any) => toast.error("خطأ في الحذف: " + (e?.message || "خطأ غير معروف")),
   });
 
   return (
@@ -191,6 +222,14 @@ const SalesList = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteTarget({ id: s.id, invoiceNo: s.invoice_no })}
+                            title="حذف الفاتورة"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                         );
@@ -202,6 +241,23 @@ const SalesList = () => {
             )}
           </CardContent>
         </Card>
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>تأكيد حذف الفاتورة</AlertDialogTitle>
+              <AlertDialogDescription>
+                هل أنت متأكد من حذف هذه الفاتورة؟ سيتم حذف جميع الأصناف داخلها ولا يمكن التراجع.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteMutation.isPending}>إلغاء</AlertDialogCancel>
+              <AlertDialogAction onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+                حذف
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <div className="mt-4 text-sm text-muted-foreground text-center">
           إجمالي الفواتير المعروضة: {sales?.length ?? 0}
