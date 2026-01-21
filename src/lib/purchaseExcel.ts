@@ -216,18 +216,13 @@ export function parsePurchaseWorkbook(args: {
         if (!nameRaw) continue;
 
         const qtyPaid = Number(r?.[tableMeta.colQty] ?? 0);
-        // In our purchase Excel templates, the "price/cost" column represents the LINE TOTAL
-        // (the paid amount for that row), not the per-unit price.
-        const lineTotal = Number(r?.[tableMeta.colPrice] ?? 0);
+        // IMPORTANT: The purchase "price/cost" column is treated as UNIT PRICE.
+        // We store it exactly as entered (no redistribution across free qty).
+        const unitPrice = Number(r?.[tableMeta.colPrice] ?? 0);
         const qtyFree = tableMeta.colFree != null ? Number(r?.[tableMeta.colFree] ?? 0) : 0;
 
-        if (!Number.isFinite(qtyPaid) || !Number.isFinite(lineTotal) || !Number.isFinite(qtyFree)) continue;
-        if (qtyPaid <= 0 || lineTotal <= 0) continue;
-
-        const denom = qtyPaid + (qtyFree > 0 ? qtyFree : 0);
-        if (denom <= 0) continue;
-        const unitPrice = lineTotal / denom;
-        if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+        if (!Number.isFinite(qtyPaid) || !Number.isFinite(unitPrice) || !Number.isFinite(qtyFree)) continue;
+        if (qtyPaid <= 0 || unitPrice <= 0) continue;
 
         const key = normalizeArabic(nameRaw);
         const matched = itemsByCode.get(key) || itemsIndex.get(key);
