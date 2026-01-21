@@ -49,10 +49,15 @@ const PurchaseEntry = () => {
         return /^[a-zA-Z]+-/.test(v) ? v : `P-${v}`;
       };
 
-      // Basic validation
+      // Basic validation (show exactly what is missing)
       const invalidInvoice = invoices.find((inv) => !inv.invoice_no || !inv.invoice_date || !inv.supplier_id);
       if (invalidInvoice) {
-        throw new Error(`الرجاء التأكد من رقم/تاريخ/مورد الفاتورة: ${invalidInvoice.invoice_no || invalidInvoice.source_sheet}`);
+        const missing: string[] = [];
+        if (!invalidInvoice.invoice_no) missing.push("رقم الفاتورة");
+        if (!invalidInvoice.invoice_date) missing.push("تاريخ الفاتورة");
+        if (!invalidInvoice.supplier_id) missing.push("المورد");
+        const who = invalidInvoice.invoice_no || invalidInvoice.source_sheet;
+        throw new Error(`الرجاء استكمال البيانات التالية (${missing.join(" / ")}) للفاتورة: ${who}`);
       }
 
       const anyMissingItems = invoices.some((inv) => inv.lines.some((l) => !l.item_id));
