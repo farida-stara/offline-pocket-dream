@@ -23,10 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Search, Plus, Eye, Trash2 } from "lucide-react";
+import { ArrowRight, Search, Plus, Eye, Trash2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
+import { downloadInvoicesPdf } from "@/lib/invoicePdf";
 
 const PurchasesList = () => {
   const navigate = useNavigate();
@@ -86,6 +87,84 @@ const PurchasesList = () => {
     onError: (e: any) => toast.error("خطأ في الحذف: " + (e?.message || "خطأ غير معروف")),
   });
 
+  const exportPdfMutation = useMutation({
+    mutationFn: async () => {
+      let q = supabase
+        .from("purchase_headers")
+        .select(
+          `
+          id, invoice_no, invoice_date, total_amount, payment_method, notes,
+          supplier:suppliers(supplier_name)
+        `,
+        )
+        .order("invoice_date", { ascending: false })
+        .limit(200);
+
+      if (search) q = q.ilike("invoice_no", `%${search}%`);
+      if (dateFrom) q = q.gte("invoice_date", dateFrom);
+      if (dateTo) q = q.lte("invoice_date", dateTo);
+
+      const { data: headers, error: headersError } = await q;
+      if (headersError) throw headersError;
+      if (!headers?.length) throw new Error("لا توجد فواتير للطباعة");
+
+      const ids = headers.map((h) => h.id);
+      const { data: lines, error: linesError } = await supabase
+        .from("purchase_lines")
+        .select(
+          `
+          purchase_header_id, quantity_paid, quantity_free, unit_price, line_total,
+          item:items_master(item_name, item_code, selling_price)
+        `,
+        )
+        .in("purchase_header_id", ids)
+        .order("line_no");
+      if (linesError) throw linesError;
+
+      const byHeader = new Map<string, any[]>();
+      (lines ?? []).forEach((l: any) => {
+        const key = l.purchase_header_id;
+        byHeader.set(key, [...(byHeader.get(key) ?? []), l]);
+      });
+
+      const invoices = headers.map((h: any) => {
+        const lns = byHeader.get(h.id) ?? [];
+        const expectedSellingTotal = lns.reduce((sum: number, l: any) => {
+          const qty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
+          const sp = Number(l.item?.selling_price ?? 0);
+          if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+          return sum + qty * sp;
+        }, 0);
+
+        return {
+          title: "فاتورة شراء",
+          invoiceNo: h.invoice_no,
+          date: format(new Date(h.invoice_date), "yyyy-MM-dd"),
+          partyLabel: "المورد",
+          partyName: h.supplier?.supplier_name || "-",
+          paymentMethod: h.payment_method || "-",
+          notes: h.notes || "",
+          totals: {
+            totalAmount: Number(h.total_amount || 0),
+            expectedSellingTotal,
+          },
+          lines: lns.map((l: any) => ({
+            itemName: l.item?.item_name || l.item?.item_code || "-",
+            qty: Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0),
+            unitPrice: Number(l.unit_price ?? 0),
+            lineTotal: Number(l.line_total || Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0)),
+          })),
+        };
+      });
+
+      const fromPart = dateFrom || "all";
+      const toPart = dateTo || "all";
+      const fileName = `purchases_${fromPart}_${toPart}.pdf`;
+      await downloadInvoicesPdf(fileName, invoices);
+    },
+    onError: (e: any) => toast.error("تعذر إنشاء PDF: " + (e?.message || "خطأ غير معروف")),
+  });
+
   return (
     <div
       className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6"
@@ -101,10 +180,21 @@ const PurchasesList = () => {
               سجل فواتير المشتريات
             </h1>
           </div>
-          <Button onClick={() => navigate("/purchases/new")}>
-            <Plus className="h-4 w-4 ml-2" />
-            فاتورة جديدة
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => exportPdfMutation.mutate()}
+              disabled={exportPdfMutation.isPending}
+            >
+              <Printer className="h-4 w-4 ml-2" />
+              {exportPdfMutation.isPending ? "جاري تجهيز PDF..." : "تحميل PDF"}
+            </Button>
+            <Button onClick={() => navigate("/purchases/new")}>
+              <Plus className="h-4 w-4 ml-2" />
+              فاتورة جديدة
+            </Button>
+          </div>
         </div>
 
         <Card className="mb-6">
