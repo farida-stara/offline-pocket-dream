@@ -288,6 +288,57 @@ export type Database = {
           },
         ]
       }
+      purchase_unmatched_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string | null
+          line_no: number
+          purchase_header_id: string
+          quantity_free: number
+          quantity_paid: number
+          source_name: string | null
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          line_no: number
+          purchase_header_id: string
+          quantity_free?: number
+          quantity_paid?: number
+          source_name?: string | null
+          unit_price?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          line_no?: number
+          purchase_header_id?: string
+          quantity_free?: number
+          quantity_paid?: number
+          source_name?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_unmatched_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "items_master"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_unmatched_lines_purchase_header_id_fkey"
+            columns: ["purchase_header_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_headers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sales_headers: {
         Row: {
           created_at: string | null
