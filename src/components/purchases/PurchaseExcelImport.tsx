@@ -11,6 +11,16 @@ import { getBestItemMatches, normalizeArabic } from "@/lib/fuzzy";
 import { parsePurchaseWorkbook, type PurchaseImportInvoice, type PurchaseImportLine } from "@/lib/purchaseExcel";
 import { ItemPickerDialog } from "@/components/items/ItemPickerDialog";
 
+type PaymentMethod = "cash" | "credit" | "knet" | "bank_transfer" | "other";
+
+const PAYMENT_METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
+  { value: "cash", label: "كاش" },
+  { value: "credit", label: "أجل" },
+  { value: "knet", label: "كي نت" },
+  { value: "bank_transfer", label: "تحويل بنكي" },
+  { value: "other", label: "أخرى" },
+];
+
 type ItemRow = { id: string; item_code?: string | null; item_name?: string | null };
 type SupplierRow = { id: string; supplier_code?: string | null; supplier_name?: string | null };
 
@@ -475,11 +485,17 @@ export function PurchaseExcelImport(props: {
 
                         <div className="w-[160px]">
                           <label className="text-xs font-medium mb-1 block">الدفع</label>
-                          <Input
-                            value={inv.payment_method ?? ""}
+                          <select
+                            className="w-full p-2 rounded-md border border-input bg-background text-foreground"
+                            value={(inv.payment_method as PaymentMethod) ?? "cash"}
                             onChange={(e) => updateInvoice(inv.id, { payment_method: e.target.value })}
-                            placeholder="cash"
-                          />
+                          >
+                            {PAYMENT_METHOD_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
                         </div>
 
                         <div className="w-[120px]">
