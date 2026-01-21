@@ -273,12 +273,28 @@ const OpeningStock = () => {
         .from("opening_stock")
         .select(`
           *,
-          items_master(item_code, item_name, category)
+          items_master(item_code, item_name, category, selling_price)
         `);
       if (error) throw error;
       return data;
     }
   });
+
+  const existingTotals = useMemo(() => {
+    const actual = (existingStock ?? []).reduce((sum: number, s: any) => {
+      const v = Number(s?.total_value ?? 0);
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+
+    const expected = (existingStock ?? []).reduce((sum: number, s: any) => {
+      const qty = Number(s?.quantity ?? 0);
+      const sp = Number(s?.items_master?.selling_price ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+      return sum + qty * sp;
+    }, 0);
+
+    return { actual, expected };
+  }, [existingStock]);
 
   const saveMutation = useMutation({
     mutationFn: async (lines: OpeningStockLine[]) => {
@@ -642,6 +658,17 @@ const OpeningStock = () => {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t bg-muted/30">
+                    <td className="p-2" colSpan={6}>
+                      <div className="text-sm font-medium">الإجمالي</div>
+                    </td>
+                    <td className="p-2 font-semibold tabular-nums" colSpan={2}>
+                      <div className="text-sm">قيمة الرصيد الافتتاحي: {existingTotals.actual.toFixed(3)} د.ك</div>
+                      <div className="text-xs text-muted-foreground">قيمة البيع المتوقعة: {existingTotals.expected.toFixed(3)} د.ك</div>
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </CardContent>
