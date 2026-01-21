@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Upload, RotateCcw, Wand2 } from "lucide-react";
+import { Upload, RotateCcw, Wand2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
@@ -167,6 +167,33 @@ export function PurchaseExcelImport(props: {
             }
           : inv,
       ),
+    );
+  };
+
+  const addLine = (invoiceId: string) => {
+    const nextLine: PurchaseImportLine = {
+      id: crypto.randomUUID(),
+      item_id: "",
+      source_name: "",
+      quantity_paid: 0,
+      quantity_free: 0,
+      unit_price: 0,
+    };
+
+    onInvoicesChange(
+      invoices.map((inv) =>
+        inv.id === invoiceId ? { ...inv, lines: [...inv.lines, nextLine] } : inv,
+      ),
+    );
+  };
+
+  const removeLine = (invoiceId: string, lineId: string) => {
+    onInvoicesChange(
+      invoices.map((inv) => {
+        if (inv.id !== invoiceId) return inv;
+        if (inv.lines.length <= 1) return inv;
+        return { ...inv, lines: inv.lines.filter((l) => l.id !== lineId) };
+      }),
     );
   };
 
@@ -409,6 +436,7 @@ export function PurchaseExcelImport(props: {
                             <th className="py-2 px-2 text-right">سعر بيع متوقع</th>
                             <th className="py-2 px-2 text-right">إجمالي البيع المتوقع</th>
                             <th className="py-2 px-2 text-right">الإجمالي</th>
+                            <th className="py-2 px-2 w-12"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -466,11 +494,30 @@ export function PurchaseExcelImport(props: {
                                 <td className="py-2 px-2 w-[120px] tabular-nums">
                                   {(Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0)).toFixed(3)}
                                 </td>
+                                <td className="py-2 px-2">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeLine(inv.id, l.id)}
+                                    disabled={inv.lines.length <= 1}
+                                    title="حذف السطر"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </td>
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
+                    </div>
+
+                    <div className="mt-3">
+                      <Button type="button" variant="outline" onClick={() => addLine(inv.id)}>
+                        <Plus className="h-4 w-4 ml-2" />
+                        إضافة سطر
+                      </Button>
                     </div>
 
                     <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 pt-4">

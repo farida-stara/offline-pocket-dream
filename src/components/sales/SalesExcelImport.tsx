@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Upload, FileSpreadsheet, Check, AlertCircle, Edit2, Trash2, Save, RotateCcw } from "lucide-react";
+import { Upload, FileSpreadsheet, Check, AlertCircle, Edit2, Trash2, Save, RotateCcw, Plus } from "lucide-react";
 import * as XLSX from "xlsx";
 import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/lib/salesExcel";
 import { fuzzyMatch } from "@/lib/fuzzy";
@@ -262,6 +262,22 @@ const SalesExcelImport = () => {
           ? { ...p, lines: p.lines.filter((_, li) => li !== lineIdx) }
           : p
       )
+    );
+  };
+
+  const addLine = (invIdx: number) => {
+    const nextLine: MatchedLine = {
+      itemCode: "",
+      itemName: "",
+      quantity: 0,
+      unitPrice: 0,
+      lineTotal: 0,
+      matchedItemId: null,
+      matchedItemName: "",
+    };
+
+    setPreviews((prev) =>
+      prev.map((p, i) => (i === invIdx ? { ...p, lines: [...p.lines, nextLine] } : p))
     );
   };
 
@@ -610,8 +626,9 @@ const SalesExcelImport = () => {
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => removeLine(invIdx, lineIdx)}
+                                  disabled={inv.lines.length <= 1}
                                 >
-                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                  <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
                               )}
                             </td>
@@ -620,6 +637,15 @@ const SalesExcelImport = () => {
                       </tbody>
                     </table>
                   </div>
+
+                  {inv.editing && (
+                    <div className="mt-3">
+                      <Button type="button" variant="outline" onClick={() => addLine(invIdx)}>
+                        <Plus className="h-4 w-4 ml-2" />
+                        إضافة سطر
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Summary */}
                   <div className="flex justify-between items-center mt-4 pt-2 border-t">
