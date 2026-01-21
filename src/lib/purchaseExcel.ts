@@ -7,6 +7,7 @@ export type PurchaseImportLine = {
   quantity_paid: number;
   quantity_free: number;
   unit_price: number;
+  discount_percent: number;
   source_name?: string;
 };
 
@@ -117,9 +118,19 @@ function findTableHeaderRow(rows: any[][]) {
   const includes = (hay: string | undefined | null, needle: string) => (hay ?? "").includes(needle);
   const candidates = [
     // Arabic
-    { item: ["الصنف", "النوع", "اسم"], qty: ["الكمية", "عدد"], price: ["السعر", "التكلفة", "سعر"], free: ["مجاني"] },
+    {
+      item: ["الصنف", "النوع", "اسم"],
+      qty: ["الكمية", "عدد"],
+      price: ["السعر", "التكلفة", "سعر"],
+      discount: ["خصم", "نسبة الخصم", "%"],
+    },
     // English
-    { item: ["item", "description", "name"], qty: ["qty", "quantity"], price: ["price", "cost", "unit"], free: ["free"] },
+    {
+      item: ["item", "description", "name"],
+      qty: ["qty", "quantity"],
+      price: ["price", "cost", "unit"],
+      discount: ["discount", "%"],
+    },
   ];
 
   for (let r = 0; r < Math.min(rows.length, 60); r++) {
@@ -134,8 +145,8 @@ function findTableHeaderRow(rows: any[][]) {
       const colPrice = normRow.findIndex((h) => cand.price.some((k) => includes(h, normalizeArabic(k))));
 
       if (colItem !== -1 && colQty !== -1 && colPrice !== -1) {
-        const colFree = normRow.findIndex((h) => cand.free.some((k) => includes(h, normalizeArabic(k))));
-        return { headerRowIndex: r, colItem, colQty, colPrice, colFree: colFree === -1 ? null : colFree };
+        const colDiscount = normRow.findIndex((h) => cand.discount.some((k) => includes(h, normalizeArabic(k))));
+        return { headerRowIndex: r, colItem, colQty, colPrice, colDiscount: colDiscount === -1 ? null : colDiscount };
       }
     }
   }
@@ -222,6 +233,7 @@ export function parsePurchaseWorkbook(args: {
           quantity_paid: number;
           quantity_free: number;
           unit_price: number;
+          discount_percent: number;
           source_name?: string;
         }
       >();
@@ -234,9 +246,12 @@ export function parsePurchaseWorkbook(args: {
         // IMPORTANT: The purchase "price/cost" column is treated as UNIT PRICE.
         // We store it exactly as entered (no redistribution across free qty).
         const unitPrice = Number(r?.[tableMeta.colPrice] ?? 0);
-        const qtyFree = tableMeta.colFree != null ? Number(r?.[tableMeta.colFree] ?? 0) : 0;
+        const discountPercent =
+          tableMeta.colDiscount != null && tableMeta.colDiscount >= 0
+            ? Number(r?.[tableMeta.colDiscount] ?? 0)
+            : 0;
 
-        if (!Number.isFinite(qtyPaid) || !Number.isFinite(unitPrice) || !Number.isFinite(qtyFree)) continue;
+        if (!Number.isFinite(qtyPaid) || !Number.isFinite(unitPrice) || !Number.isFinite(discountPercent)) continue;
 
         // Free item rule (ONLY reason to allow duplicate rows):
         // quantity has value + purchase price is zero.
@@ -245,6 +260,9 @@ export function parsePurchaseWorkbook(args: {
         // Skip invalid rows
         if (qtyPaid <= 0) continue;
         if (!isFreeItemRow && unitPrice <= 0) continue;
+
+        // Optional discount% (applies ONLY to the value/total). Clamp to [0..100]
+        const safeDiscount = Math.max(0, Math.min(100, Number.isFinite(discountPercent) ? discountPercent : 0));
 
         const key = normalizeArabic(nameRaw);
         const matched = itemsByCode.get(key) || itemsIndex.get(key);
@@ -256,26 +274,27 @@ export function parsePurchaseWorkbook(args: {
             id: crypto.randomUUID(),
             item_id: matched ?? "",
             quantity_paid: 0,
-            quantity_free: qtyPaid + (qtyFree > 0 ? qtyFree : 0),
+            quantity_free: qtyPaid,
             unit_price: 0,
+            discount_percent: 0,
             source_name: nameRaw,
           });
           continue;
         }
 
         // Normal (non-free) row: merge duplicates so duplicates only remain for free-item rows.
-        const dedupeKey = `${matched ?? ""}::${key}::${unitPrice}`;
+        const dedupeKey = `${matched ?? ""}::${key}::${unitPrice}::${safeDiscount}`;
         const existing = mergedNonFree.get(dedupeKey);
         if (existing) {
           existing.quantity_paid += qtyPaid;
-          existing.quantity_free += qtyFree > 0 ? qtyFree : 0;
         } else {
           mergedNonFree.set(dedupeKey, {
             id: crypto.randomUUID(),
             item_id: matched ?? "",
             quantity_paid: qtyPaid,
-            quantity_free: qtyFree > 0 ? qtyFree : 0,
+            quantity_free: 0,
             unit_price: unitPrice,
+            discount_percent: safeDiscount,
             source_name: nameRaw,
           });
         }

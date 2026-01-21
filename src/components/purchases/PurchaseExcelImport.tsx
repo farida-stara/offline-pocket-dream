@@ -181,6 +181,7 @@ export function PurchaseExcelImport(props: {
       quantity_paid: 0,
       quantity_free: 0,
       unit_price: 0,
+      discount_percent: 0,
     };
 
     onInvoicesChange(
@@ -373,7 +374,7 @@ export function PurchaseExcelImport(props: {
                     <div className="col-span-4 text-sm">
                       <div className="font-medium">{line.source_name}</div>
                       <div className="text-xs text-muted-foreground">
-                        كمية: {line.quantity_paid} | سعر: {line.unit_price}
+                        كمية: {Number(line.quantity_paid ?? 0) + Number(line.quantity_free ?? 0)} | سعر: {line.unit_price} | خصم%: {line.discount_percent}
                       </div>
                     </div>
 
@@ -416,7 +417,10 @@ export function PurchaseExcelImport(props: {
             {invoices.map((inv) => {
               const linesCount = inv.lines.length;
               const qtyTotal = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0), 0);
-              const total = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0), 0);
+              const total = inv.lines.reduce((s, l) => {
+                const discount = Math.max(0, Math.min(100, Number(l.discount_percent ?? 0)));
+                return s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0) * (1 - discount / 100);
+              }, 0);
               const missingSupplier = !inv.supplier_id;
               const hasUnmatched = inv.lines.some((l) => !l.item_id);
 
@@ -499,7 +503,7 @@ export function PurchaseExcelImport(props: {
                             <th className="py-2 px-2 text-right">م</th>
                             <th className="py-2 px-2 text-right">الصنف</th>
                             <th className="py-2 px-2 text-right">الكمية</th>
-                            <th className="py-2 px-2 text-right">مجاني</th>
+                            <th className="py-2 px-2 text-right">خصم %</th>
                             <th className="py-2 px-2 text-right">سعر الشراء</th>
                             <th className="py-2 px-2 text-right">سعر بيع متوقع</th>
                             <th className="py-2 px-2 text-right">إجمالي البيع المتوقع</th>
@@ -512,6 +516,8 @@ export function PurchaseExcelImport(props: {
                             const expectedSell = Number(l.unit_price ?? 0) * (1 + Number(inv.margin_percent ?? 0) / 100);
                             const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
                             const expectedSellTotal = expectedSell * totalQty;
+                            const discount = Math.max(0, Math.min(100, Number(l.discount_percent ?? 0)));
+                            const netLineTotal = Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0) * (1 - discount / 100);
                             return (
                               <tr key={l.id} className="border-b">
                                 <td className="py-2 px-2 tabular-nums">{idx + 1}</td>
@@ -533,16 +539,28 @@ export function PurchaseExcelImport(props: {
                                   <Input
                                     type="number"
                                     step="0.001"
-                                    value={l.quantity_paid}
-                                    onChange={(e) => updateLine(inv.id, l.id, { quantity_paid: Number(e.target.value || 0) })}
+                                    value={totalQty}
+                                    onChange={(e) => {
+                                      const nextQty = Number(e.target.value || 0);
+                                      const isFree = Number(l.unit_price ?? 0) === 0;
+                                      updateLine(
+                                        inv.id,
+                                        l.id,
+                                        isFree ? { quantity_free: nextQty, quantity_paid: 0 } : { quantity_paid: nextQty, quantity_free: 0 },
+                                      );
+                                    }}
                                   />
                                 </td>
                                 <td className="py-2 px-2 w-[120px]">
                                   <Input
                                     type="number"
-                                    step="0.001"
-                                    value={l.quantity_free}
-                                    onChange={(e) => updateLine(inv.id, l.id, { quantity_free: Number(e.target.value || 0) })}
+                                    step="0.01"
+                                    value={l.discount_percent}
+                                    onChange={(e) => {
+                                      const isFree = Number(l.unit_price ?? 0) === 0;
+                                      const next = Math.max(0, Math.min(100, Number(e.target.value || 0)));
+                                      updateLine(inv.id, l.id, { discount_percent: isFree ? 0 : next });
+                                    }}
                                   />
                                 </td>
                                 <td className="py-2 px-2 w-[140px]">
@@ -550,7 +568,33 @@ export function PurchaseExcelImport(props: {
                                     type="number"
                                     step="0.001"
                                     value={l.unit_price}
-                                    onChange={(e) => updateLine(inv.id, l.id, { unit_price: Number(e.target.value || 0) })}
+                                    onChange={(e) => {
+                                      const nextPrice = Number(e.target.value || 0);
+                                      const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
+
+                                      // If price becomes 0 => treat as free-item row (qty goes to quantity_free)
+                                      if (nextPrice === 0 && totalQty > 0) {
+                                        updateLine(inv.id, l.id, {
+                                          unit_price: 0,
+                                          quantity_paid: 0,
+                                          quantity_free: totalQty,
+                                          discount_percent: 0,
+                                        });
+                                        return;
+                                      }
+
+                                      // If price becomes >0 and line was free => move qty back to paid
+                                      if (nextPrice > 0 && Number(l.quantity_paid ?? 0) === 0 && Number(l.quantity_free ?? 0) > 0) {
+                                        updateLine(inv.id, l.id, {
+                                          unit_price: nextPrice,
+                                          quantity_paid: Number(l.quantity_free ?? 0),
+                                          quantity_free: 0,
+                                        });
+                                        return;
+                                      }
+
+                                      updateLine(inv.id, l.id, { unit_price: nextPrice });
+                                    }}
                                   />
                                 </td>
                                 <td className="py-2 px-2 w-[140px] tabular-nums">
@@ -560,7 +604,7 @@ export function PurchaseExcelImport(props: {
                                   {expectedSellTotal.toFixed(3)}
                                 </td>
                                 <td className="py-2 px-2 w-[120px] tabular-nums">
-                                  {(Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0)).toFixed(3)}
+                                  {netLineTotal.toFixed(3)}
                                 </td>
                                 <td className="py-2 px-2">
                                   <Button
