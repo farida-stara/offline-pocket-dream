@@ -75,6 +75,7 @@ export function PurchaseExcelImport(props: {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activePick, setActivePick] = useState<{ invoiceId: string; lineId: string; sourceName?: string } | null>(null);
   const [supplierAll, setSupplierAll] = useState<string>("");
+  const [marginAll, setMarginAll] = useState<number>(0);
 
   const itemsIndex = useMemo(() => {
     const byName = new Map<string, string>();
@@ -261,6 +262,20 @@ export function PurchaseExcelImport(props: {
     toast.success(mode === "missing" ? "تم تعيين المورد للفواتير الناقصة." : "تم تعيين المورد لجميع الفواتير.");
   };
 
+  const applyMarginToAll = (mode: "missing" | "all") => {
+    const nextMargin = Number.isFinite(marginAll) ? marginAll : 0;
+
+    onInvoicesChange(
+      invoices.map((inv) => {
+        const isMissing = !Number(inv.margin_percent);
+        if (mode === "missing" && !isMissing) return inv;
+        return { ...inv, margin_percent: nextMargin };
+      }),
+    );
+
+    toast.success(mode === "missing" ? "تم تعيين الهامش للفواتير الناقصة." : "تم تعيين الهامش لجميع الفواتير.");
+  };
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -335,6 +350,16 @@ export function PurchaseExcelImport(props: {
                   </select>
                 </div>
 
+                <div className="w-[180px]">
+                  <label className="text-xs font-medium mb-1 block">تعيين هامش % للكل</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={marginAll}
+                    onChange={(e) => setMarginAll(Number(e.target.value || 0))}
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <Button type="button" variant="secondary" onClick={() => applySupplierToAll("missing")}
                     disabled={!invoices.length}
@@ -345,6 +370,17 @@ export function PurchaseExcelImport(props: {
                     disabled={!invoices.length}
                   >
                     تطبيق على الجميع
+                  </Button>
+
+                  <Button type="button" variant="secondary" onClick={() => applyMarginToAll("missing")}
+                    disabled={!invoices.length}
+                  >
+                    هامش للناقص
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => applyMarginToAll("all")}
+                    disabled={!invoices.length}
+                  >
+                    هامش للجميع
                   </Button>
                 </div>
               </div>
