@@ -28,6 +28,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
+import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
 
 const PurchaseDetails = () => {
   const navigate = useNavigate();
@@ -244,6 +245,33 @@ const PurchaseDetails = () => {
           <div className="ms-auto flex gap-2">
             {!editing ? (
               <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    downloadSingleInvoicePdf({
+                      title: "فاتورة شراء",
+                      invoiceNo: header.invoice_no,
+                      date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+                      partyLabel: "المورد",
+                      partyName: header.supplier?.supplier_name || "-",
+                      paymentMethod: header.payment_method || "-",
+                      notes: header.notes || "",
+                      totals: {
+                        totalAmount: Number(header.total_amount || 0),
+                        expectedSellingTotal: Number(expectedTotal || 0),
+                      },
+                      lines: (lines ?? []).map((l: any) => ({
+                        itemName: l.item?.item_name || l.item?.item_code || "-",
+                        qty: Number(l.quantity_paid || 0) + Number(l.quantity_free || 0),
+                        unitPrice: Number(l.unit_price || 0),
+                        lineTotal: Number(l.line_total || Number(l.quantity_paid || 0) * Number(l.unit_price || 0)),
+                      })),
+                    })
+                  }
+                >
+                  تحميل PDF
+                </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
                 </Button>
