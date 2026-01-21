@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -11,12 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Plus, Save, X } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 const PurchaseDetails = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+
+  const [editing, setEditing] = useState(false);
 
   const { data: purchase, isLoading } = useQuery({
     queryKey: ["purchase-details", id],
@@ -38,7 +44,7 @@ const PurchaseDetails = () => {
         .from("purchase_lines")
         .select(`
           *,
-          item:items_master(item_code, item_name, category)
+          item:items_master(item_code, item_name, category, selling_price)
         `)
         .eq("purchase_header_id", id)
         .order("line_no");
@@ -48,6 +54,126 @@ const PurchaseDetails = () => {
       return { header, lines };
     },
     enabled: !!id,
+  });
+
+  const { data: items } = useQuery({
+    queryKey: ["items"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("items_master")
+        .select("id,item_code,item_name,selling_price")
+        .eq("is_active", true)
+        .order("item_name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: suppliers } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("suppliers").select("id,supplier_code,supplier_name").eq("is_active", true).order("supplier_name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const expectedTotal = useMemo(() => {
+    if (!purchase) return 0;
+    return (purchase.lines ?? []).reduce((sum: number, l: any) => {
+      const qty = Number(l?.quantity_paid ?? 0) + Number(l?.quantity_free ?? 0);
+      const sp = Number(l?.item?.selling_price ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+      return sum + qty * sp;
+    }, 0);
+  }, [purchase]);
+
+  const [editHeader, setEditHeader] = useState<any>(null);
+  const [editLines, setEditLines] = useState<any[]>([]);
+
+  const startEdit = () => {
+    if (!purchase) return;
+    setEditHeader({
+      supplier_id: purchase.header.supplier_id,
+      invoice_date: purchase.header.invoice_date,
+      payment_method: purchase.header.payment_method ?? "cash",
+      notes: purchase.header.notes ?? "",
+    });
+    setEditLines(
+      (purchase.lines ?? []).map((l: any) => ({
+        id: l.id,
+        item_id: l.item_id,
+        quantity_paid: Number(l.quantity_paid ?? 0),
+        quantity_free: Number(l.quantity_free ?? 0),
+        unit_price: Number(l.unit_price ?? 0),
+      })),
+    );
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditHeader(null);
+    setEditLines([]);
+  };
+
+  const editTotals = useMemo(() => {
+    const actual = editLines.reduce((sum, l) => sum + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0), 0);
+    const expected = editLines.reduce((sum, l) => {
+      const it = (items ?? []).find((x: any) => x.id === l.item_id);
+      const sp = Number((it as any)?.selling_price ?? 0);
+      const qty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+      return sum + qty * sp;
+    }, 0);
+    return { actual, expected };
+  }, [editLines, items]);
+
+  const saveEditMutation = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("No ID");
+      if (!editHeader?.supplier_id || !editHeader?.invoice_date) throw new Error("الرجاء اختيار المورد وتاريخ الفاتورة");
+
+      const validLines = editLines.filter((l) => l.item_id && Number(l.quantity_paid) > 0 && Number(l.unit_price) > 0);
+      if (!validLines.length) throw new Error("الرجاء إضافة سطر واحد على الأقل");
+
+      const totalAmount = validLines.reduce((sum, l) => sum + Number(l.quantity_paid) * Number(l.unit_price), 0);
+
+      const { error: headerError } = await supabase
+        .from("purchase_headers")
+        .update({
+          supplier_id: editHeader.supplier_id,
+          invoice_date: editHeader.invoice_date,
+          payment_method: editHeader.payment_method === "other" ? (editHeader.payment_method_other ?? "") : editHeader.payment_method,
+          notes: editHeader.notes || null,
+          total_amount: totalAmount,
+        })
+        .eq("id", id);
+      if (headerError) throw headerError;
+
+      // Replace lines to keep it simple
+      const { error: delError } = await supabase.from("purchase_lines").delete().eq("purchase_header_id", id);
+      if (delError) throw delError;
+
+      const { error: insError } = await supabase.from("purchase_lines").insert(
+        validLines.map((l, idx) => ({
+          purchase_header_id: id,
+          line_no: idx + 1,
+          item_id: l.item_id,
+          quantity_paid: Number(l.quantity_paid),
+          quantity_free: Number(l.quantity_free ?? 0),
+          unit_price: Number(l.unit_price),
+        })),
+      );
+      if (insError) throw insError;
+    },
+    onSuccess: async () => {
+      toast.success("تم تحديث الفاتورة");
+      await queryClient.invalidateQueries({ queryKey: ["purchase-details", id] });
+      await queryClient.invalidateQueries({ queryKey: ["purchases-list"] });
+      cancelEdit();
+    },
+    onError: (e: any) => toast.error("خطأ في الحفظ: " + (e?.message || "خطأ غير معروف")),
   });
 
   if (isLoading) {
@@ -79,6 +205,24 @@ const PurchaseDetails = () => {
             <ArrowRight className="h-5 w-5" />
           </Button>
           <h1 className="text-3xl font-bold text-slate-900">تفاصيل فاتورة الشراء</h1>
+          <div className="ms-auto flex gap-2">
+            {!editing ? (
+              <Button type="button" variant="outline" onClick={startEdit}>
+                تعديل
+              </Button>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={cancelEdit}>
+                  <X className="h-4 w-4 ml-2" />
+                  إلغاء
+                </Button>
+                <Button type="button" onClick={() => saveEditMutation.mutate()} disabled={saveEditMutation.isPending}>
+                  <Save className="h-4 w-4 ml-2" />
+                  {saveEditMutation.isPending ? "جاري الحفظ..." : "حفظ التعديل"}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <Card className="mb-6">
@@ -93,22 +237,57 @@ const PurchaseDetails = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">التاريخ</p>
-                <p className="font-semibold">{format(new Date(header.invoice_date), "yyyy-MM-dd")}</p>
+                {editing ? (
+                  <Input type="date" value={editHeader?.invoice_date ?? ""} onChange={(e) => setEditHeader((h: any) => ({ ...h, invoice_date: e.target.value }))} />
+                ) : (
+                  <p className="font-semibold">{format(new Date(header.invoice_date), "yyyy-MM-dd")}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">المورد</p>
-                <p className="font-semibold">{header.supplier?.supplier_name || "-"}</p>
+                {editing ? (
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={editHeader?.supplier_id ?? ""}
+                    onChange={(e) => setEditHeader((h: any) => ({ ...h, supplier_id: e.target.value }))}
+                  >
+                    <option value="">اختر المورد</option>
+                    {suppliers?.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.supplier_code} - {s.supplier_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="font-semibold">{header.supplier?.supplier_name || "-"}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">طريقة الدفع</p>
-                <p className="font-semibold">{header.payment_method || "-"}</p>
+                {editing ? (
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={editHeader?.payment_method ?? "cash"}
+                    onChange={(e) => setEditHeader((h: any) => ({ ...h, payment_method: e.target.value }))}
+                  >
+                    <option value="cash">نقد</option>
+                    <option value="card">بطاقة</option>
+                    <option value="transfer">تحويل</option>
+                    <option value="credit">آجل</option>
+                    <option value="other">أخرى…</option>
+                  </select>
+                ) : (
+                  <p className="font-semibold">{header.payment_method || "-"}</p>
+                )}
               </div>
-              {header.notes && (
-                <div className="col-span-2 md:col-span-4">
-                  <p className="text-sm text-muted-foreground">ملاحظات</p>
-                  <p>{header.notes}</p>
-                </div>
-              )}
+              <div className="col-span-2 md:col-span-4">
+                <p className="text-sm text-muted-foreground">ملاحظات</p>
+                {editing ? (
+                  <Input value={editHeader?.notes ?? ""} onChange={(e) => setEditHeader((h: any) => ({ ...h, notes: e.target.value }))} placeholder="" />
+                ) : (
+                  <p>{header.notes || "-"}</p>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -132,26 +311,93 @@ const PurchaseDetails = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lines.map((line: any) => (
-                    <TableRow key={line.id}>
-                      <TableCell className="text-muted-foreground">{line.line_no}</TableCell>
-                      <TableCell className="font-mono">{line.item?.item_code || "-"}</TableCell>
-                      <TableCell className="font-medium">{line.item?.item_name || "-"}</TableCell>
-                      <TableCell className="text-center">{line.quantity_paid}</TableCell>
-                      <TableCell className="text-center">{line.quantity_free || 0}</TableCell>
-                      <TableCell className="text-left tabular-nums">
-                        {Number(line.unit_price).toFixed(3)}
-                      </TableCell>
-                      <TableCell className="text-left tabular-nums font-semibold">
-                        {Number(line.line_total || line.quantity_paid * line.unit_price).toFixed(3)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {!editing
+                    ? lines.map((line: any) => (
+                        <TableRow key={line.id}>
+                          <TableCell className="text-muted-foreground">{line.line_no}</TableCell>
+                          <TableCell className="font-mono">{line.item?.item_code || "-"}</TableCell>
+                          <TableCell className="font-medium">{line.item?.item_name || "-"}</TableCell>
+                          <TableCell className="text-center">{line.quantity_paid}</TableCell>
+                          <TableCell className="text-center">{line.quantity_free || 0}</TableCell>
+                          <TableCell className="text-left tabular-nums">{Number(line.unit_price).toFixed(3)}</TableCell>
+                          <TableCell className="text-left tabular-nums font-semibold">
+                            {Number(line.line_total || line.quantity_paid * line.unit_price).toFixed(3)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    : editLines.map((line: any, idx: number) => (
+                        <TableRow key={line.id ?? idx}>
+                          <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                          <TableCell className="font-mono">
+                            <select
+                              className="w-full p-2 border rounded-md"
+                              value={line.item_id}
+                              onChange={(e) =>
+                                setEditLines((prev) => prev.map((p, i) => (i === idx ? { ...p, item_id: e.target.value } : p)))
+                              }
+                            >
+                              <option value="">اختر الصنف</option>
+                              {(items ?? []).map((it: any) => (
+                                <option key={it.id} value={it.id}>
+                                  {it.item_code} - {it.item_name}
+                                </option>
+                              ))}
+                            </select>
+                          </TableCell>
+                          <TableCell className="font-medium">—</TableCell>
+                          <TableCell className="text-center">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={line.quantity_paid}
+                              onChange={(e) =>
+                                setEditLines((prev) => prev.map((p, i) => (i === idx ? { ...p, quantity_paid: Number(e.target.value || 0) } : p)))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={line.quantity_free}
+                              onChange={(e) =>
+                                setEditLines((prev) => prev.map((p, i) => (i === idx ? { ...p, quantity_free: Number(e.target.value || 0) } : p)))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-left tabular-nums">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={line.unit_price}
+                              onChange={(e) =>
+                                setEditLines((prev) => prev.map((p, i) => (i === idx ? { ...p, unit_price: Number(e.target.value || 0) } : p)))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-left tabular-nums font-semibold">
+                            {(Number(line.quantity_paid || 0) * Number(line.unit_price || 0)).toFixed(3)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                 </TableBody>
               </Table>
             </div>
           </CardContent>
         </Card>
+
+        {editing && (
+          <div className="mt-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditLines((prev) => [...prev, { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 }])}
+            >
+              <Plus className="h-4 w-4 ml-2" />
+              إضافة سطر
+            </Button>
+          </div>
+        )}
 
         <div className="mt-6 flex justify-end">
           <Card className="w-64">
@@ -159,7 +405,13 @@ const PurchaseDetails = () => {
               <div className="flex justify-between items-center">
                 <span className="text-lg font-semibold">الإجمالي:</span>
                 <span className="text-xl font-bold tabular-nums">
-                  {Number(header.total_amount || 0).toFixed(3)} د.ك
+                  {Number((editing ? editTotals.actual : header.total_amount) || 0).toFixed(3)} د.ك
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">البيع المتوقع:</span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {Number((editing ? editTotals.expected : expectedTotal) || 0).toFixed(3)} د.ك
                 </span>
               </div>
             </CardContent>

@@ -30,7 +30,8 @@ const SalesList = () => {
         .select(
           `
           *,
-          customer:customers(customer_name, customer_code)
+           customer:customers(customer_name, customer_code),
+           lines:sales_lines(quantity, item:items_master(selling_price))
         `
         )
         .order("invoice_date", { ascending: false })
@@ -150,11 +151,21 @@ const SalesList = () => {
                       <TableHead className="text-right">العميل</TableHead>
                       <TableHead className="text-right">طريقة الدفع</TableHead>
                       <TableHead className="text-left">الإجمالي</TableHead>
+                      <TableHead className="text-left">إجمالي البيع المتوقع</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sales.map((s) => (
+                      (() => {
+                        const expected = (s.lines ?? []).reduce((sum: number, l: any) => {
+                          const qty = Number(l?.quantity ?? 0);
+                          const sp = Number(l?.item?.selling_price ?? 0);
+                          if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+                          return sum + qty * sp;
+                        }, 0);
+
+                        return (
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">
                           {s.invoice_no}
@@ -169,6 +180,9 @@ const SalesList = () => {
                         <TableCell className="text-left tabular-nums">
                           {Number(s.total_amount || 0).toFixed(3)} د.ك
                         </TableCell>
+                        <TableCell className="text-left tabular-nums">
+                          {expected.toFixed(3)} د.ك
+                        </TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
@@ -179,6 +193,8 @@ const SalesList = () => {
                           </Button>
                         </TableCell>
                       </TableRow>
+                        );
+                      })()
                     ))}
                   </TableBody>
                 </Table>
