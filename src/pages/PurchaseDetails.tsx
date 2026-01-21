@@ -13,9 +13,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { deleteInvoice } from "@/lib/invoiceDelete";
 
 const PurchaseDetails = () => {
   const navigate = useNavigate();
@@ -183,6 +195,23 @@ const PurchaseDetails = () => {
     onError: (e: any) => toast.error("خطأ في الحفظ: " + (e?.message || "خطأ غير معروف")),
   });
 
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      if (!purchase) throw new Error("الفاتورة غير موجودة");
+      await deleteInvoice({
+        id: purchase.header.id,
+        invoiceNo: purchase.header.invoice_no,
+        type: "PURCHASE",
+      });
+    },
+    onSuccess: async () => {
+      toast.success("تم حذف الفاتورة");
+      await queryClient.invalidateQueries({ queryKey: ["purchases-list"] });
+      navigate("/purchases");
+    },
+    onError: (e: any) => toast.error("خطأ في الحذف: " + (e?.message || "خطأ غير معروف")),
+  });
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -214,9 +243,33 @@ const PurchaseDetails = () => {
           <h1 className="text-3xl font-bold text-slate-900">تفاصيل فاتورة الشراء</h1>
           <div className="ms-auto flex gap-2">
             {!editing ? (
-              <Button type="button" variant="outline" onClick={startEdit}>
-                تعديل
-              </Button>
+              <>
+                <Button type="button" variant="outline" onClick={startEdit}>
+                  تعديل
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="destructive" disabled={deleteInvoiceMutation.isPending}>
+                      <Trash2 className="h-4 w-4 ml-2" />
+                      حذف الفاتورة
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent dir="rtl">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>تأكيد حذف الفاتورة</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        هل أنت متأكد من حذف فاتورة الشراء رقم {header.invoice_no}؟ سيتم حذف جميع الأصناف داخلها ولا يمكن التراجع.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteInvoiceMutation.mutate()}>
+                        حذف
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
             ) : (
               <>
                 <Button type="button" variant="outline" onClick={cancelEdit}>
