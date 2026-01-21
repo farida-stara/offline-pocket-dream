@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, RotateCcw, Wand2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -577,6 +578,16 @@ export function PurchaseExcelImport(props: {
                         عدد السطور: {linesCount} | إجمالي الكمية: {qtyTotal.toFixed(3)}
                       </div>
                       <div className="text-lg font-bold">الإجمالي: {total.toFixed(3)} د.ك</div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-xs font-medium mb-1 block">ملاحظة على الفاتورة</label>
+                      <Textarea
+                        value={inv.notes ?? ""}
+                        onChange={(e) => updateInvoice(inv.id, { notes: e.target.value })}
+                        placeholder="اكتب ملاحظة خاصة بهذه الفاتورة..."
+                        rows={3}
+                      />
                     </div>
                   </CardContent>
                 </Card>
