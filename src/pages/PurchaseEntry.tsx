@@ -75,7 +75,10 @@ const PurchaseEntry = () => {
         const normalizedInvoiceNo = normalizePurchaseInvoiceNo(inv.invoice_no);
         const matchedLines = inv.lines
           .map((l, idx) => ({ ...l, __line_no: idx + 1 }))
-          .filter((l) => l.item_id && l.quantity_paid > 0 && l.unit_price > 0);
+          .filter((l) =>
+            l.item_id &&
+            ((Number(l.quantity_paid) > 0 && Number(l.unit_price) > 0) || (Number(l.quantity_free) > 0 && Number(l.unit_price) === 0)),
+          );
 
         const unmatchedLines = inv.lines
           .map((l, idx) => ({ ...l, __line_no: idx + 1 }))

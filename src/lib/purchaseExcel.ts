@@ -211,6 +211,21 @@ export function parsePurchaseWorkbook(args: {
 
     if (tableMeta) {
       const dataRows = rows.slice(tableMeta.headerRowIndex + 1);
+
+      // Enforce: duplicate rows are only allowed for "free items" lines.
+      // For normal lines, we merge duplicates by (item, unit price).
+      const mergedNonFree = new Map<
+        string,
+        {
+          id: string;
+          item_id: string;
+          quantity_paid: number;
+          quantity_free: number;
+          unit_price: number;
+          source_name?: string;
+        }
+      >();
+
       for (const r of dataRows) {
         const nameRaw = String(r?.[tableMeta.colItem] ?? "").trim();
         if (!nameRaw) continue;
@@ -222,20 +237,51 @@ export function parsePurchaseWorkbook(args: {
         const qtyFree = tableMeta.colFree != null ? Number(r?.[tableMeta.colFree] ?? 0) : 0;
 
         if (!Number.isFinite(qtyPaid) || !Number.isFinite(unitPrice) || !Number.isFinite(qtyFree)) continue;
-        if (qtyPaid <= 0 || unitPrice <= 0) continue;
+
+        // Free item rule (ONLY reason to allow duplicate rows):
+        // quantity has value + purchase price is zero.
+        const isFreeItemRow = qtyPaid > 0 && unitPrice === 0;
+
+        // Skip invalid rows
+        if (qtyPaid <= 0) continue;
+        if (!isFreeItemRow && unitPrice <= 0) continue;
 
         const key = normalizeArabic(nameRaw);
         const matched = itemsByCode.get(key) || itemsIndex.get(key);
 
-        lines.push({
-          id: crypto.randomUUID(),
-          item_id: matched ?? "",
-          quantity_paid: qtyPaid,
-          quantity_free: qtyFree > 0 ? qtyFree : 0,
-          unit_price: unitPrice,
-          source_name: nameRaw,
-        });
+        // When row is free-item (qty>0 and price=0), we store it as a separate line:
+        // paid quantity becomes 0, and free quantity holds the qty from the Excel "qty" column.
+        if (isFreeItemRow) {
+          lines.push({
+            id: crypto.randomUUID(),
+            item_id: matched ?? "",
+            quantity_paid: 0,
+            quantity_free: qtyPaid + (qtyFree > 0 ? qtyFree : 0),
+            unit_price: 0,
+            source_name: nameRaw,
+          });
+          continue;
+        }
+
+        // Normal (non-free) row: merge duplicates so duplicates only remain for free-item rows.
+        const dedupeKey = `${matched ?? ""}::${key}::${unitPrice}`;
+        const existing = mergedNonFree.get(dedupeKey);
+        if (existing) {
+          existing.quantity_paid += qtyPaid;
+          existing.quantity_free += qtyFree > 0 ? qtyFree : 0;
+        } else {
+          mergedNonFree.set(dedupeKey, {
+            id: crypto.randomUUID(),
+            item_id: matched ?? "",
+            quantity_paid: qtyPaid,
+            quantity_free: qtyFree > 0 ? qtyFree : 0,
+            unit_price: unitPrice,
+            source_name: nameRaw,
+          });
+        }
       }
+
+      lines.push(...Array.from(mergedNonFree.values()));
     }
 
     // If empty sheet or couldn't parse line items, skip.
