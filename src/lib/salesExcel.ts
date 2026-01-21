@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { normalizeArabic } from "@/lib/fuzzy";
 
 export interface SalesExcelLine {
   itemCode: string;
@@ -37,42 +38,137 @@ function parseDateCell(val: any): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function findHeader(rows: any[][], keywords: string[]): string {
-  for (let r = 0; r < Math.min(rows.length, 15); r++) {
-    for (let c = 0; c < (rows[r]?.length ?? 0); c++) {
-      const cell = String(rows[r][c] ?? "").toLowerCase();
-      for (const kw of keywords) {
-        if (cell.includes(kw.toLowerCase())) {
-          const nextCell = rows[r][c + 1];
-          if (nextCell !== undefined && nextCell !== null && nextCell !== "") {
-            return String(nextCell).trim();
-          }
-        }
+function normalizeDigits(input: string): string {
+  // Arabic-Indic and Eastern Arabic-Indic digits
+  const map: Record<string, string> = {
+    "٠": "0",
+    "١": "1",
+    "٢": "2",
+    "٣": "3",
+    "٤": "4",
+    "٥": "5",
+    "٦": "6",
+    "٧": "7",
+    "٨": "8",
+    "٩": "9",
+    "۰": "0",
+    "۱": "1",
+    "۲": "2",
+    "۳": "3",
+    "۴": "4",
+    "۵": "5",
+    "۶": "6",
+    "۷": "7",
+    "۸": "8",
+    "۹": "9",
+  };
+  return String(input ?? "").replace(/[٠-٩۰-۹]/g, (d) => map[d] ?? d);
+}
+
+function parseNumberCell(val: any): number {
+  if (typeof val === "number" && Number.isFinite(val)) return val;
+  const s0 = normalizeDigits(String(val ?? "").trim());
+  if (!s0) return 0;
+
+  // Normalize decimal separators and remove thousands separators
+  // - If we have both "," and "." -> assume comma is thousands.
+  // - If we have only "," -> assume comma is decimal.
+  const hasComma = s0.includes(",");
+  const hasDot = s0.includes(".");
+  const s = s0
+    .replace(/\s+/g, "")
+    .replace(/٬/g, "") // Arabic thousands separator
+    .replace(/٫/g, ".") // Arabic decimal separator
+    .replace(hasComma && !hasDot ? /,/g : /,/g, hasComma && !hasDot ? "." : "");
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function findHeaderValue(rows: any[][], keywords: string[]): string {
+  const normKeys = keywords.map((k) => normalizeArabic(k));
+
+  for (let r = 0; r < Math.min(rows.length, 25); r++) {
+    const row = rows[r] ?? [];
+    for (let c = 0; c < (row.length ?? 0); c++) {
+      const cellRaw = String(row[c] ?? "").trim();
+      if (!cellRaw) continue;
+
+      const norm = normalizeArabic(cellRaw);
+      const hit = normKeys.some((k) => norm.includes(k));
+      if (!hit) continue;
+
+      // Same-cell patterns: "رقم الفاتورة: 123" or "Invoice No - 123"
+      const splitByColon = cellRaw.split(":");
+      if (splitByColon.length > 1) {
+        const after = splitByColon.slice(1).join(":").trim();
+        if (after) return after;
+      }
+      const splitByDash = cellRaw.split("-");
+      if (splitByDash.length > 1) {
+        const after = splitByDash.slice(1).join("-").trim();
+        if (after) return after;
+      }
+
+      // Next cell
+      const next = row[c + 1];
+      if (next !== undefined && next !== null && String(next).trim() !== "") {
+        return String(next).trim();
+      }
+
+      // Below cell (common in formatted templates)
+      const below = rows[r + 1]?.[c];
+      if (below !== undefined && below !== null && String(below).trim() !== "") {
+        return String(below).trim();
       }
     }
   }
   return "";
 }
 
-function findTableStart(rows: any[][]): number {
-  const tableKeywords = ["الصنف", "الكود", "item", "code", "المنتج", "product", "اسم"];
-  for (let r = 0; r < rows.length; r++) {
-    const rowStr = (rows[r] ?? []).map((c) => String(c ?? "").toLowerCase()).join(" ");
-    for (const kw of tableKeywords) {
-      if (rowStr.includes(kw.toLowerCase())) return r;
-    }
-  }
-  return 5;
-}
+function findTableHeaderRow(rows: any[][]): {
+  headerRowIndex: number;
+  codeCol: number | null;
+  nameCol: number;
+  qtyCol: number;
+  priceCol: number;
+  totalCol: number | null;
+} | null {
+  const includes = (hay: string | undefined | null, needle: string) => (hay ?? "").includes(needle);
+  const candidates = [
+    {
+      code: ["الكود", "رمز", "item code", "code"],
+      name: ["الصنف", "الاسم", "اسم", "المنتج", "product", "item", "name", "description"],
+      qty: ["الكمية", "كمية", "qty", "quantity"],
+      price: ["السعر", "سعر", "price", "unit price", "unit"],
+      total: ["المجموع", "الإجمالي", "الاجمالي", "total", "line total"],
+    },
+  ];
 
-function guessColumnIndex(headerRow: any[], keywords: string[]): number {
-  for (let c = 0; c < headerRow.length; c++) {
-    const cell = String(headerRow[c] ?? "").toLowerCase();
-    for (const kw of keywords) {
-      if (cell.includes(kw.toLowerCase())) return c;
+  for (let r = 0; r < Math.min(rows.length, 60); r++) {
+    const row = (rows[r] ?? []).map((c) => String(c ?? "").trim());
+    if (!row.some(Boolean)) continue;
+    const normRow = row.map((c) => normalizeArabic(c));
+
+    for (const cand of candidates) {
+      const codeCol = normRow.findIndex((h) => cand.code.some((k) => includes(h, normalizeArabic(k))));
+      const nameCol = normRow.findIndex((h) => cand.name.some((k) => includes(h, normalizeArabic(k))));
+      const qtyCol = normRow.findIndex((h) => cand.qty.some((k) => includes(h, normalizeArabic(k))));
+      const priceCol = normRow.findIndex((h) => cand.price.some((k) => includes(h, normalizeArabic(k))));
+      if (nameCol !== -1 && qtyCol !== -1 && priceCol !== -1) {
+        const totalCol = normRow.findIndex((h) => cand.total.some((k) => includes(h, normalizeArabic(k))));
+        return {
+          headerRowIndex: r,
+          codeCol: codeCol === -1 ? null : codeCol,
+          nameCol,
+          qtyCol,
+          priceCol,
+          totalCol: totalCol === -1 ? null : totalCol,
+        };
+      }
     }
   }
-  return -1;
+  return null;
 }
 
 export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
@@ -81,17 +177,17 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
     if (rows.length < 3) continue;
 
     // Extract header info
-    let invoiceNo = findHeader(rows, ["رقم الفاتورة", "invoice no", "invoice #", "فاتورة رقم", "رقم"]);
-    const invoiceDate = parseDateCell(findHeader(rows, ["التاريخ", "date", "تاريخ"]));
-    const customerCode = findHeader(rows, ["كود العميل", "customer code", "رمز العميل"]);
-    const customerName = findHeader(rows, ["العميل", "customer", "اسم العميل", "customer name"]);
-    let paymentMethod = findHeader(rows, ["الدفع", "payment", "طريقة الدفع", "payment method"]);
-    const notes = findHeader(rows, ["ملاحظات", "notes", "note"]);
+    let invoiceNo = findHeaderValue(rows, ["رقم الفاتورة", "invoice no", "invoice #", "فاتورة رقم"]);
+    const invoiceDate = parseDateCell(findHeaderValue(rows, ["التاريخ", "date", "تاريخ", "invoice date"]));
+    const customerCode = findHeaderValue(rows, ["كود العميل", "customer code", "رمز العميل"]);
+    const customerName = findHeaderValue(rows, ["العميل", "customer", "اسم العميل", "customer name"]);
+    let paymentMethod = findHeaderValue(rows, ["الدفع", "payment", "طريقة الدفع", "payment method"]);
+    const notes = findHeaderValue(rows, ["ملاحظات", "notes", "note"]);
 
     if (!paymentMethod) paymentMethod = "نقد";
     if (!invoiceNo) {
@@ -99,24 +195,20 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
     }
 
     // Find table
-    const tableStart = findTableStart(rows);
-    const headerRow = rows[tableStart] ?? [];
-    const codeCol = guessColumnIndex(headerRow, ["الكود", "code", "رمز", "item code"]);
-    const nameCol = guessColumnIndex(headerRow, ["الصنف", "الاسم", "item", "name", "المنتج", "product"]);
-    const qtyCol = guessColumnIndex(headerRow, ["الكمية", "qty", "quantity", "كمية"]);
-    const priceCol = guessColumnIndex(headerRow, ["السعر", "price", "unit price", "سعر"]);
-    const totalCol = guessColumnIndex(headerRow, ["المجموع", "total", "الإجمالي", "line total"]);
+    const tableMeta = findTableHeaderRow(rows);
+    if (!tableMeta) continue;
 
     const lines: SalesExcelLine[] = [];
-    for (let r = tableStart + 1; r < rows.length; r++) {
+    for (let r = tableMeta.headerRowIndex + 1; r < rows.length; r++) {
       const row = rows[r];
       if (!row || row.every((c: any) => !c && c !== 0)) continue;
 
-      const itemCode = codeCol >= 0 ? String(row[codeCol] ?? "").trim() : "";
-      const itemName = nameCol >= 0 ? String(row[nameCol] ?? "").trim() : "";
-      const quantity = qtyCol >= 0 ? parseFloat(row[qtyCol]) || 0 : 0;
-      const unitPrice = priceCol >= 0 ? parseFloat(row[priceCol]) || 0 : 0;
-      const lineTotal = totalCol >= 0 ? parseFloat(row[totalCol]) || quantity * unitPrice : quantity * unitPrice;
+      const itemCode = tableMeta.codeCol != null ? String(row[tableMeta.codeCol] ?? "").trim() : "";
+      const itemName = String(row[tableMeta.nameCol] ?? "").trim();
+      const quantity = parseNumberCell(row[tableMeta.qtyCol]);
+      const unitPrice = parseNumberCell(row[tableMeta.priceCol]);
+      const explicitTotal = tableMeta.totalCol != null ? parseNumberCell(row[tableMeta.totalCol]) : 0;
+      const lineTotal = explicitTotal || quantity * unitPrice;
 
       if (!itemCode && !itemName) continue;
       if (quantity === 0) continue;
