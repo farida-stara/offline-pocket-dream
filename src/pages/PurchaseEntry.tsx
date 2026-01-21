@@ -136,15 +136,17 @@ const PurchaseEntry = () => {
     ),
   };
 
+  const hasMissingRequired = invoices.some((inv) => !inv.invoice_no || !inv.invoice_date || !inv.supplier_id);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted p-6" dir="rtl">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" onClick={() => navigate("/")}
           >
             <ArrowRight className="h-5 w-5" />
           </Button>
-          <h1 className="text-3xl font-bold text-slate-900">فواتير المشتريات</h1>
+          <h1 className="text-3xl font-bold text-foreground">فواتير المشتريات</h1>
         </div>
 
         <Tabs value={mode} onValueChange={(v) => setMode(v as any)}>
@@ -169,6 +171,9 @@ const PurchaseEntry = () => {
                     <Button onClick={() => saveImportedMutation.mutate()} disabled={saveImportedMutation.isPending}>
                       {saveImportedMutation.isPending ? "جاري الحفظ..." : "حفظ كل الفواتير"}
                     </Button>
+                    {hasMissingRequired && (
+                      <div className="text-xs text-destructive">يوجد فواتير ناقصة (رقم/تاريخ/مورد) — أكملها ثم احفظ.</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

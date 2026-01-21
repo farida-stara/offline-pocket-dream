@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { getBestItemMatches, normalizeArabic } from "@/lib/fuzzy";
+import { getBestMatchesByKeys, normalizeArabic } from "@/lib/fuzzy";
 
 export type PurchaseImportLine = {
   id: string;
@@ -176,7 +176,17 @@ export function parsePurchaseWorkbook(args: {
     const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true });
 
     const rawInvoiceNo = findHeaderValue(rows, ["رقم الفاتورة", "فاتورة", "invoice no", "invoice #", "invoice"]);
-    const rawSupplier = findHeaderValue(rows, ["المورد", "اسم المورد", "supplier", "vendor"]);
+    const rawSupplier = findHeaderValue(rows, [
+      "المورد",
+      "اسم المورد",
+      "المورد/المزود",
+      "المزود",
+      "شركة",
+      "supplier",
+      "vendor",
+      "vendor name",
+      "supplier name",
+    ]);
     const rawDate = findHeaderValue(rows, ["تاريخ", "تاريخ الفاتورة", "date", "invoice date"]);
     const rawPayment = findHeaderValue(rows, ["طريقة الدفع", "الدفع", "payment method", "payment"]);
     const rawStatus = findHeaderValue(rows, ["حالة الدفع", "الحالة", "payment status", "status"]);
@@ -191,8 +201,9 @@ export function parsePurchaseWorkbook(args: {
       suppliersByCode.get(supplierNorm) ||
       suppliersByName.get(supplierNorm) ||
       (() => {
-        const best = getBestItemMatches(rawSupplier ?? "", (suppliers ?? []) as any, 1)[0];
-        return best?.id ?? "";
+        const best = getBestMatchesByKeys(rawSupplier ?? "", suppliers, { name: "supplier_name", code: "supplier_code" }, 1)[0];
+        // be conservative to avoid wrong vendor assignment
+        return best && best.score >= 0.75 ? best.id : "";
       })();
 
     const tableMeta = findTableHeaderRow(rows);

@@ -64,6 +64,7 @@ export function PurchaseExcelImport(props: {
   const [matcherOpen, setMatcherOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activePick, setActivePick] = useState<{ invoiceId: string; lineId: string } | null>(null);
+  const [supplierAll, setSupplierAll] = useState<string>("");
 
   const itemsIndex = useMemo(() => {
     const byName = new Map<string, string>();
@@ -84,6 +85,8 @@ export function PurchaseExcelImport(props: {
     }
     return out;
   }, [invoices]);
+
+  const missingSupplierCount = useMemo(() => invoices.filter((inv) => !inv.supplier_id).length, [invoices]);
 
   const triggerFilePick = () => fileInputRef.current?.click();
 
@@ -229,6 +232,22 @@ export function PurchaseExcelImport(props: {
     toast.message("تمت محاولة المطابقة التلقائية. راجع العناصر غير المطابقة إن وجدت.");
   };
 
+  const applySupplierToAll = (mode: "missing" | "all") => {
+    if (!supplierAll) {
+      toast.info("اختر المورد أولاً.");
+      return;
+    }
+
+    onInvoicesChange(
+      invoices.map((inv) => {
+        if (mode === "missing" && inv.supplier_id) return inv;
+        return { ...inv, supplier_id: supplierAll };
+      }),
+    );
+
+    toast.success(mode === "missing" ? "تم تعيين المورد للفواتير الناقصة." : "تم تعيين المورد لجميع الفواتير.");
+  };
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -280,11 +299,50 @@ export function PurchaseExcelImport(props: {
           </p>
 
           {invoices.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
               <Button type="button" variant="outline" onClick={autoMatchAll}>
                 <Wand2 className="h-4 w-4 ml-2" />
                 مطابقة تلقائية
               </Button>
+
+              <div className="flex flex-col md:flex-row md:items-end gap-2">
+                <div className="w-[260px]">
+                  <label className="text-xs font-medium mb-1 block">تعيين المورد للكل</label>
+                  <select
+                    className="w-full p-2 rounded-md border border-input bg-background text-foreground"
+                    value={supplierAll}
+                    onChange={(e) => setSupplierAll(e.target.value)}
+                  >
+                    <option value="">اختر المورد</option>
+                    {suppliers?.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.supplier_code} - {s.supplier_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" onClick={() => applySupplierToAll("missing")}
+                    disabled={!invoices.length}
+                  >
+                    تطبيق على الناقص فقط
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => applySupplierToAll("all")}
+                    disabled={!invoices.length}
+                  >
+                    تطبيق على الجميع
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {missingSupplierCount > 0 && (
+            <div className="mt-3 text-sm">
+              <span className="inline-flex items-center rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-destructive">
+                يوجد {missingSupplierCount} فاتورة بدون مورد — الرجاء اختيار المورد قبل الحفظ.
+              </span>
             </div>
           )}
         </div>
@@ -365,9 +423,10 @@ export function PurchaseExcelImport(props: {
               const linesCount = inv.lines.length;
               const qtyTotal = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0), 0);
               const total = inv.lines.reduce((s, l) => s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0), 0);
+              const missingSupplier = !inv.supplier_id;
 
               return (
-                <Card key={inv.id}>
+                <Card key={inv.id} className={missingSupplier ? "ring-1 ring-destructive/40" : undefined}>
                   <CardHeader>
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
@@ -388,7 +447,7 @@ export function PurchaseExcelImport(props: {
                         <div className="w-[220px]">
                           <label className="text-xs font-medium mb-1 block">المورد</label>
                           <select
-                            className="w-full p-2 border rounded-md"
+                            className="w-full p-2 rounded-md border border-input bg-background text-foreground"
                             value={inv.supplier_id}
                             onChange={(e) => updateInvoice(inv.id, { supplier_id: e.target.value })}
                           >
