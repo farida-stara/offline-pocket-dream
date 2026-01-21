@@ -92,6 +92,45 @@ export function getBestItemMatches<T extends { id: string; item_name?: string | 
   return scored;
 }
 
+type MatchKeys<T> = {
+  name: keyof T;
+  code?: keyof T;
+};
+
+export function getBestMatchesByKeys<T extends { id: string }>(
+  query: string,
+  rows: T[] | undefined,
+  keys: MatchKeys<T>,
+  limit = 5,
+): Array<{ id: string; label: string; score: number }> {
+  if (!rows?.length) return [];
+
+  const getStr = (row: T, k: keyof T | undefined) => {
+    if (!k) return "";
+    const v = row[k];
+    return v == null ? "" : String(v);
+  };
+
+  const scored = rows
+    .map((row) => {
+      const name = getStr(row, keys.name);
+      const code = getStr(row, keys.code);
+      const s1 = similarityScore(query, name);
+      const s2 = code ? similarityScore(query, code) : 0;
+      const score = Math.max(s1, s2 * 0.9);
+      return {
+        id: row.id,
+        label: code ? `${code} - ${name}` : name,
+        score,
+      };
+    })
+    .filter((x) => x.score > 0.25)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored;
+}
+
 export function fuzzyMatch(query: string, target: string, threshold = 0.5): boolean {
   return similarityScore(query, target) >= threshold;
 }
