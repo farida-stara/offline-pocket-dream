@@ -407,12 +407,15 @@ export function PurchaseExcelImport(props: {
                             <th className="py-2 px-2 text-right">مجاني</th>
                             <th className="py-2 px-2 text-right">سعر الشراء</th>
                             <th className="py-2 px-2 text-right">سعر بيع متوقع</th>
+                            <th className="py-2 px-2 text-right">إجمالي البيع المتوقع</th>
                             <th className="py-2 px-2 text-right">الإجمالي</th>
                           </tr>
                         </thead>
                         <tbody>
                           {inv.lines.map((l, idx) => {
                             const expectedSell = Number(l.unit_price ?? 0) * (1 + Number(inv.margin_percent ?? 0) / 100);
+                            const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
+                            const expectedSellTotal = expectedSell * totalQty;
                             return (
                               <tr key={l.id} className="border-b">
                                 <td className="py-2 px-2 tabular-nums">{idx + 1}</td>
@@ -456,6 +459,9 @@ export function PurchaseExcelImport(props: {
                                 </td>
                                 <td className="py-2 px-2 w-[140px] tabular-nums">
                                   {expectedSell.toFixed(3)}
+                                </td>
+                                <td className="py-2 px-2 w-[160px] tabular-nums">
+                                  {expectedSellTotal.toFixed(3)}
                                 </td>
                                 <td className="py-2 px-2 w-[120px] tabular-nums">
                                   {(Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0)).toFixed(3)}

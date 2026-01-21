@@ -243,11 +243,13 @@ export function PurchaseManualEntry(props: {
 
           {lines.map((line, idx) => {
             const expectedSell = Number(line.unit_price ?? 0) * (1 + marginPercent / 100);
+            const totalQty = Number(line.quantity_paid ?? 0) + Number(line.quantity_free ?? 0);
+            const expectedSellTotal = expectedSell * totalQty;
             const costPrice = Number(itemsById.get(line.item_id)?.cost_price ?? 0);
             void costPrice;
 
             return (
-              <div key={line.id} className="grid grid-cols-14 gap-4 items-end mb-4">
+              <div key={line.id} className="grid grid-cols-16 gap-4 items-end mb-4">
                 <div className="col-span-1">
                   <label className="text-sm font-medium mb-1 block">م</label>
                   <div className="p-2 bg-muted rounded-md text-center tabular-nums">{idx + 1}</div>
@@ -283,6 +285,11 @@ export function PurchaseManualEntry(props: {
                 <div className="col-span-2">
                   <label className="text-sm font-medium mb-1 block">سعر بيع متوقع</label>
                   <div className="p-2 bg-muted rounded-md text-center tabular-nums">{expectedSell.toFixed(3)}</div>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-sm font-medium mb-1 block">إجمالي البيع المتوقع</label>
+                  <div className="p-2 bg-muted rounded-md text-center tabular-nums">{expectedSellTotal.toFixed(3)}</div>
                 </div>
 
                 <div className="col-span-1">
