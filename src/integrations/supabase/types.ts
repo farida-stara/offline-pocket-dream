@@ -187,6 +187,66 @@ export type Database = {
           },
         ]
       }
+      payment_ledger: {
+        Row: {
+          amount: number
+          bank_details: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          invoice_id: string | null
+          invoice_no: string | null
+          invoice_type: string
+          notes: string | null
+          other_method_name: string | null
+          paid_at: string
+          party_id: string | null
+          party_type: string
+          payment_method: string
+          reference_no: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bank_details?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          invoice_id?: string | null
+          invoice_no?: string | null
+          invoice_type: string
+          notes?: string | null
+          other_method_name?: string | null
+          paid_at?: string
+          party_id?: string | null
+          party_type: string
+          payment_method: string
+          reference_no?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bank_details?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          invoice_id?: string | null
+          invoice_no?: string | null
+          invoice_type?: string
+          notes?: string | null
+          other_method_name?: string | null
+          paid_at?: string
+          party_id?: string | null
+          party_type?: string
+          payment_method?: string
+          reference_no?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       purchase_headers: {
         Row: {
           created_at: string | null
