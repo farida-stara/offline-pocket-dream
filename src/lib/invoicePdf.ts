@@ -1,7 +1,7 @@
 import pdfMake from "pdfmake/build/pdfmake";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - pdfmake fonts module has no proper TS types
-import pdfFonts from "pdfmake/build/vfs_fonts";
+import * as pdfFontsModule from "pdfmake/build/vfs_fonts";
 
 type PdfLine = {
   itemName: string;
@@ -26,7 +26,16 @@ export type PdfInvoice = {
   lines: PdfLine[];
 };
 
-pdfMake.vfs = pdfFonts.pdfMake.vfs;
+function getBuiltinVfs(): Record<string, string> {
+  const mod: any = pdfFontsModule as any;
+  return (
+    mod?.pdfMake?.vfs ||
+    mod?.default?.pdfMake?.vfs ||
+    mod?.vfs ||
+    mod?.default?.vfs ||
+    {}
+  );
+}
 
 let arabicFontReady: Promise<void> | null = null;
 
@@ -34,6 +43,11 @@ async function ensureArabicFont() {
   if (arabicFontReady) return arabicFontReady;
 
   arabicFontReady = (async () => {
+    // Ensure built-in VFS is set (avoid crashing at module import time)
+    if (!(pdfMake as any).vfs) {
+      (pdfMake as any).vfs = getBuiltinVfs();
+    }
+
     // Load font from public/ (so it works in preview + published)
     const res = await fetch("/fonts/Amiri-Regular.ttf");
     if (!res.ok) throw new Error("تعذر تحميل خط الطباعة العربي");
@@ -48,8 +62,8 @@ async function ensureArabicFont() {
     const base64 = btoa(binary);
 
     // Add to VFS + register font family
-    pdfMake.vfs = {
-      ...(pdfMake.vfs ?? {}),
+    (pdfMake as any).vfs = {
+      ...(((pdfMake as any).vfs ?? {}) as Record<string, string>),
       "Amiri-Regular.ttf": base64,
     };
 
