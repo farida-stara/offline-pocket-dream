@@ -95,6 +95,24 @@ const OpeningStock = () => {
     [lines]
   );
 
+  const itemsById = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const it of items ?? []) map.set(it.id, it);
+    return map;
+  }, [items]);
+
+  const totals = useMemo(() => {
+    const actual = lines.reduce((sum, l) => sum + Number(l.quantity ?? 0) * Number(l.unit_cost ?? 0), 0);
+    // الإجمالي المتوقع: قيمة المخزون بسعر البيع من دليل الأصناف (selling_price)
+    const expected = lines.reduce((sum, l) => {
+      if (!l.item_id) return sum;
+      const sp = Number(itemsById.get(l.item_id)?.selling_price ?? 0);
+      return sum + Number(l.quantity ?? 0) * sp;
+    }, 0);
+
+    return { actual, expected };
+  }, [lines, itemsById]);
+
   const openPickerForLine = (lineId: string) => {
     setActivePickLineId(lineId);
     setPickerOpen(true);
@@ -497,8 +515,15 @@ const OpeningStock = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {lines.map((line) => (
-                <div key={line.id} className="grid grid-cols-12 gap-4 items-end">
+              {lines.map((line, idx) => (
+                <div key={line.id} className="grid grid-cols-13 gap-4 items-end">
+                  <div className="col-span-1">
+                    <label className="text-sm font-medium mb-1 block">رقم المسلسل</label>
+                    <div className="h-10 flex items-center justify-center rounded-md bg-muted text-sm tabular-nums">
+                      {idx + 1}
+                    </div>
+                  </div>
+
                   <div className="col-span-5">
                     <label className="text-sm font-medium mb-1 block">العنصر</label>
                     <select
@@ -550,6 +575,14 @@ const OpeningStock = () => {
                 </div>
               ))}
 
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t pt-4">
+                <div className="text-sm text-muted-foreground">عدد السطور: {lines.length}</div>
+                <div className="text-end space-y-1">
+                  <div className="text-base font-semibold">إجمالي قيمة الفاتورة: {totals.actual.toFixed(3)} د.ك</div>
+                  <div className="text-sm text-muted-foreground">الإجمالي المتوقع (بسعر البيع): {totals.expected.toFixed(3)} د.ك</div>
+                </div>
+              </div>
+
               <div className="flex gap-2">
                 <Button onClick={addLine} variant="outline">
                   <Plus className="h-4 w-4 ml-2" />
@@ -577,6 +610,7 @@ const OpeningStock = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
+                    <th className="text-right p-2">م</th>
                     <th className="text-right p-2">كود العنصر</th>
                     <th className="text-right p-2">اسم العنصر</th>
                     <th className="text-right p-2">التصنيف</th>
@@ -587,8 +621,9 @@ const OpeningStock = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {existingStock?.map((stock: any) => (
+                  {existingStock?.map((stock: any, idx: number) => (
                     <tr key={stock.id} className="border-b hover:bg-slate-50">
+                      <td className="p-2 tabular-nums">{idx + 1}</td>
                       <td className="p-2">{stock.items_master.item_code}</td>
                       <td className="p-2">{stock.items_master.item_name}</td>
                       <td className="p-2">{stock.items_master.category}</td>
