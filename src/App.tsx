@@ -14,6 +14,8 @@ import SalesList from "./pages/SalesList";
 import SalesDetails from "./pages/SalesDetails";
 import InventoryReport from "./pages/InventoryReport";
 import ItemsMaster from "./pages/ItemsMaster";
+import SuppliersMaster from "./pages/SuppliersMaster";
+import CustomersMaster from "./pages/CustomersMaster";
 import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -99,6 +101,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ItemsMaster />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/suppliers"
+              element={
+                <ProtectedRoute>
+                  <SuppliersMaster />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/customers"
+              element={
+                <ProtectedRoute>
+                  <CustomersMaster />
                 </ProtectedRoute>
               }
             />
