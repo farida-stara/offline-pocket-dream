@@ -131,6 +131,7 @@ function findTableHeaderRow(rows: any[][]): {
   codeCol: number | null;
   nameCol: number;
   qtyCol: number;
+  qtyCols: number[];
   priceCol: number;
   totalCol: number | null;
 } | null {
@@ -158,10 +159,17 @@ function findTableHeaderRow(rows: any[][]): {
         "العدد",
         "مباع",
         "المباع",
+        "مرتجع",
+        "المرتجع",
+        "مسحوب",
+        "المسحوب",
+        "سحب",
         "مبيعات",
         "qty",
         "quantity",
         "sold",
+        "returned",
+        "withdrawn",
       ],
       price: [
         "السعر",
@@ -184,7 +192,11 @@ function findTableHeaderRow(rows: any[][]): {
     for (const cand of candidates) {
       const codeCol = normRow.findIndex((h) => cand.code.some((k) => includes(h, normalizeArabic(k))));
       const nameCol = normRow.findIndex((h) => cand.name.some((k) => includes(h, normalizeArabic(k))));
-      const qtyCol = normRow.findIndex((h) => cand.qty.some((k) => includes(h, normalizeArabic(k))));
+        const qtyCols = normRow
+          .map((h, idx) => ({ h, idx }))
+          .filter(({ h }) => cand.qty.some((k) => includes(h, normalizeArabic(k))))
+          .map(({ idx }) => idx);
+        const qtyCol = qtyCols[0] ?? -1;
       const priceCol = normRow.findIndex((h) => cand.price.some((k) => includes(h, normalizeArabic(k))));
       if (nameCol !== -1 && qtyCol !== -1 && priceCol !== -1) {
         const totalCol = normRow.findIndex((h) => cand.total.some((k) => includes(h, normalizeArabic(k))));
@@ -193,6 +205,7 @@ function findTableHeaderRow(rows: any[][]): {
           codeCol: codeCol === -1 ? null : codeCol,
           nameCol,
           qtyCol,
+            qtyCols,
           priceCol,
           totalCol: totalCol === -1 ? null : totalCol,
         };
@@ -207,6 +220,7 @@ function findTableHeaderRowByData(rows: any[][]): {
   codeCol: number | null;
   nameCol: number;
   qtyCol: number;
+  qtyCols: number[];
   priceCol: number;
   totalCol: number | null;
 } | null {
@@ -230,6 +244,7 @@ function findTableHeaderRowByData(rows: any[][]): {
           codeCol: null,
           nameCol: c,
           qtyCol: c + 1,
+          qtyCols: [c + 1],
           priceCol: c + 2,
           totalCol: c + 3 < maxCols ? c + 3 : null,
         };
@@ -237,6 +252,16 @@ function findTableHeaderRowByData(rows: any[][]): {
     }
   }
   return null;
+}
+
+function pickQuantityFromRow(row: any[], qtyCols: number[], fallbackQtyCol: number): number {
+  const cols = qtyCols.length > 0 ? qtyCols : [fallbackQtyCol];
+  for (const col of cols) {
+    if (col == null || col < 0) continue;
+    const v = parseNumberCell(row?.[col]);
+    if (v !== 0) return v;
+  }
+  return 0;
 }
 
 export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
@@ -273,7 +298,7 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
 
       const itemCode = tableMeta.codeCol != null ? String(row[tableMeta.codeCol] ?? "").trim() : "";
       const itemName = String(row[tableMeta.nameCol] ?? "").trim();
-      const quantity = parseNumberCell(row[tableMeta.qtyCol]);
+      const quantity = pickQuantityFromRow(row, tableMeta.qtyCols ?? [], tableMeta.qtyCol);
       const unitPrice = parseNumberCell(row[tableMeta.priceCol]);
       const explicitTotal = tableMeta.totalCol != null ? parseNumberCell(row[tableMeta.totalCol]) : 0;
       const lineTotal = explicitTotal || quantity * unitPrice;
