@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/lib/salesExcel";
 import { fuzzyMatch } from "@/lib/fuzzy";
 import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
+import { getDisplayQuantities, mergeNotesWithQuantities } from "@/lib/salesLineQuantities";
 
 const LAST_IMPORT_STORAGE_KEY = "sales_invoices:last_import:v1";
 const MAX_CACHED_FILE_BYTES = 4_500_000;
@@ -41,6 +42,7 @@ interface MatchedLine {
   itemCode: string;
   itemName: string;
   quantity: number;
+  notes?: string;
   unitPrice: number;
   lineTotal: number;
   matchedItemId: string | null;
@@ -328,6 +330,7 @@ const SalesExcelImport = () => {
             quantity: line.quantity,
             unit_price: line.unitPrice,
             line_total: line.quantity * line.unitPrice,
+            notes: line.notes ?? null,
           }))
         );
 
@@ -533,7 +536,9 @@ const SalesExcelImport = () => {
                           <th className="p-2 text-start">الكود</th>
                           <th className="p-2 text-start">الصنف (Excel)</th>
                           <th className="p-2 text-start">مطابق</th>
-                          <th className="p-2 text-end">الكمية</th>
+                          <th className="p-2 text-end">الكمية المباعه</th>
+                          <th className="p-2 text-end">مرتجع لعدم البيع</th>
+                          <th className="p-2 text-end">الكمية المسحوبة</th>
                           <th className="p-2 text-end">السعر</th>
                           <th className="p-2 text-end">الإجمالي</th>
                           <th className="p-2"></th>
@@ -541,6 +546,21 @@ const SalesExcelImport = () => {
                       </thead>
                       <tbody>
                         {inv.lines.map((line, lineIdx) => (
+                          (() => {
+                            const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+                            const returned = q.returned;
+                            const withdrawn = q.withdrawn;
+
+                            const updateQtyMeta = (next: { returned?: number; withdrawn?: number }) => {
+                              const merged = mergeNotesWithQuantities(line.notes ?? null, {
+                                sold: line.quantity,
+                                returned: next.returned ?? returned,
+                                withdrawn: next.withdrawn ?? withdrawn,
+                              });
+                              updateLineField(invIdx, lineIdx, "notes", merged ?? "");
+                            };
+
+                            return (
                           <tr
                             key={lineIdx}
                             className={
@@ -597,6 +617,35 @@ const SalesExcelImport = () => {
                                 line.quantity.toFixed(3)
                               )}
                             </td>
+
+                            <td className="p-2 text-end tabular-nums">
+                              {inv.editing ? (
+                                <Input
+                                  type="number"
+                                  step="0.001"
+                                  className="w-20 text-end"
+                                  value={returned}
+                                  onChange={(e) => updateQtyMeta({ returned: parseFloat(e.target.value) || 0 })}
+                                />
+                              ) : (
+                                Number(returned || 0).toFixed(3)
+                              )}
+                            </td>
+
+                            <td className="p-2 text-end tabular-nums">
+                              {inv.editing ? (
+                                <Input
+                                  type="number"
+                                  step="0.001"
+                                  className="w-20 text-end"
+                                  value={withdrawn}
+                                  onChange={(e) => updateQtyMeta({ withdrawn: parseFloat(e.target.value) || 0 })}
+                                />
+                              ) : (
+                                Number(withdrawn || 0).toFixed(3)
+                              )}
+                            </td>
+
                             <td className="p-2 text-end tabular-nums">
                               {inv.editing ? (
                                 <Input
@@ -633,6 +682,8 @@ const SalesExcelImport = () => {
                               )}
                             </td>
                           </tr>
+                            );
+                          })()
                         ))}
                       </tbody>
                     </table>

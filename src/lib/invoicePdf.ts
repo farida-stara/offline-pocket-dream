@@ -6,6 +6,11 @@ import * as pdfFontsModule from "pdfmake/build/vfs_fonts";
 type PdfLine = {
   itemName: string;
   qty: number;
+  quantities?: {
+    sold: number;
+    returned: number;
+    withdrawn: number;
+  };
   unitPrice: number;
   lineTotal: number;
 };
@@ -89,6 +94,12 @@ function money(n: number, currency = "د.ك") {
 function invoiceToContent(inv: PdfInvoice) {
   const currency = inv.currency ?? "د.ك";
 
+  const hasQtyBreakdown = (inv.lines ?? []).some((l) => {
+    const q = (l as any)?.quantities;
+    if (!q) return false;
+    return Number(q.sold || 0) !== 0 || Number(q.returned || 0) !== 0 || Number(q.withdrawn || 0) !== 0;
+  });
+
   const headerTableBody = [
     [
       { text: "رقم الفاتورة", style: "label" },
@@ -104,22 +115,46 @@ function invoiceToContent(inv: PdfInvoice) {
     ],
   ];
 
-  const linesBody = [
-    [
-      { text: "م", style: "tableHeader" },
-      { text: "الصنف", style: "tableHeader" },
-      { text: "الكمية", style: "tableHeader" },
-      { text: "السعر", style: "tableHeader" },
-      { text: "الإجمالي", style: "tableHeader" },
-    ],
-    ...inv.lines.map((l, idx) => [
-      { text: String(idx + 1), alignment: "right" },
-      { text: l.itemName || "-", alignment: "right" },
-      { text: Number(l.qty || 0).toFixed(3), alignment: "right" },
-      { text: money(l.unitPrice || 0, currency), alignment: "right" },
-      { text: money(l.lineTotal || 0, currency), alignment: "right" },
-    ]),
-  ];
+  const linesBody = hasQtyBreakdown
+    ? [
+        [
+          { text: "م", style: "tableHeader" },
+          { text: "الصنف", style: "tableHeader" },
+          { text: "الكمية المباعه", style: "tableHeader" },
+          { text: "مرتجع", style: "tableHeader" },
+          { text: "مسحوب", style: "tableHeader" },
+          { text: "السعر", style: "tableHeader" },
+          { text: "الإجمالي", style: "tableHeader" },
+        ],
+        ...inv.lines.map((l, idx) => {
+          const q = (l as any)?.quantities ?? { sold: l.qty, returned: 0, withdrawn: 0 };
+          return [
+            { text: String(idx + 1), alignment: "right" },
+            { text: l.itemName || "-", alignment: "right" },
+            { text: Number(q.sold || 0).toFixed(3), alignment: "right" },
+            { text: Number(q.returned || 0).toFixed(3), alignment: "right" },
+            { text: Number(q.withdrawn || 0).toFixed(3), alignment: "right" },
+            { text: money(l.unitPrice || 0, currency), alignment: "right" },
+            { text: money(l.lineTotal || 0, currency), alignment: "right" },
+          ];
+        }),
+      ]
+    : [
+        [
+          { text: "م", style: "tableHeader" },
+          { text: "الصنف", style: "tableHeader" },
+          { text: "الكمية", style: "tableHeader" },
+          { text: "السعر", style: "tableHeader" },
+          { text: "الإجمالي", style: "tableHeader" },
+        ],
+        ...inv.lines.map((l, idx) => [
+          { text: String(idx + 1), alignment: "right" },
+          { text: l.itemName || "-", alignment: "right" },
+          { text: Number(l.qty || 0).toFixed(3), alignment: "right" },
+          { text: money(l.unitPrice || 0, currency), alignment: "right" },
+          { text: money(l.lineTotal || 0, currency), alignment: "right" },
+        ]),
+      ];
 
   const totalsRight = [
     { text: `الإجمالي: ${money(inv.totals.totalAmount, currency)}`, style: "totals" },
@@ -147,7 +182,7 @@ function invoiceToContent(inv: PdfInvoice) {
     },
     {
       table: {
-        widths: [20, "*", 60, 70, 80],
+        widths: hasQtyBreakdown ? [20, "*", 50, 45, 45, 70, 80] : [20, "*", 60, 70, 80],
         body: linesBody,
       },
       layout: "lightHorizontalLines",
