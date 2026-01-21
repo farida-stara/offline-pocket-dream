@@ -137,10 +137,41 @@ function findTableHeaderRow(rows: any[][]): {
   const includes = (hay: string | undefined | null, needle: string) => (hay ?? "").includes(needle);
   const candidates = [
     {
-      code: ["الكود", "رمز", "item code", "code"],
-      name: ["الصنف", "الاسم", "اسم", "المنتج", "product", "item", "name", "description"],
-      qty: ["الكمية", "كمية", "qty", "quantity"],
-      price: ["السعر", "سعر", "price", "unit price", "unit"],
+      code: ["الكود", "رمز", "رقم الصنف", "item code", "code", "sku"],
+      name: [
+        "الصنف",
+        "البيان",
+        "الوصف",
+        "اسم الصنف",
+        "الاسم",
+        "اسم",
+        "المنتج",
+        "product",
+        "item",
+        "name",
+        "description",
+      ],
+      // Some templates use quantity variants like: sold/returned/withdrawn columns
+      qty: [
+        "الكمية",
+        "كمية",
+        "العدد",
+        "مباع",
+        "المباع",
+        "مبيعات",
+        "qty",
+        "quantity",
+        "sold",
+      ],
+      price: [
+        "السعر",
+        "سعر",
+        "سعر الوحدة",
+        "سعر بيع",
+        "price",
+        "unit price",
+        "unit",
+      ],
       total: ["المجموع", "الإجمالي", "الاجمالي", "total", "line total"],
     },
   ];
@@ -164,6 +195,43 @@ function findTableHeaderRow(rows: any[][]): {
           qtyCol,
           priceCol,
           totalCol: totalCol === -1 ? null : totalCol,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findTableHeaderRowByData(rows: any[][]): {
+  headerRowIndex: number;
+  codeCol: number | null;
+  nameCol: number;
+  qtyCol: number;
+  priceCol: number;
+  totalCol: number | null;
+} | null {
+  // Heuristic fallback: find 3 adjacent columns that look like (name:string, qty:number, price:number)
+  // within the first ~120 rows, to support templates without explicit header labels.
+  const maxRows = Math.min(rows.length, 120);
+  for (let r = 0; r < maxRows; r++) {
+    const row = rows[r] ?? [];
+    const maxCols = Math.min(row.length ?? 0, 40);
+    for (let c = 0; c < maxCols - 2; c++) {
+      const nameRaw = String(row[c] ?? "").trim();
+      const qty = parseNumberCell(row[c + 1]);
+      const price = parseNumberCell(row[c + 2]);
+
+      // Name should be non-trivial text; qty/price should look present (not both zero)
+      const nameLooksValid = nameRaw.length >= 2 && isNaN(Number(nameRaw));
+      const numbersLookValid = !(qty === 0 && price === 0);
+      if (nameLooksValid && numbersLookValid) {
+        return {
+          headerRowIndex: r - 1 >= 0 ? r - 1 : r,
+          codeCol: null,
+          nameCol: c,
+          qtyCol: c + 1,
+          priceCol: c + 2,
+          totalCol: c + 3 < maxCols ? c + 3 : null,
         };
       }
     }
@@ -195,7 +263,7 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
     }
 
     // Find table
-    const tableMeta = findTableHeaderRow(rows);
+    const tableMeta = findTableHeaderRow(rows) ?? findTableHeaderRowByData(rows);
     if (!tableMeta) continue;
 
     const lines: SalesExcelLine[] = [];
@@ -211,7 +279,8 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
       const lineTotal = explicitTotal || quantity * unitPrice;
 
       if (!itemCode && !itemName) continue;
-      if (quantity === 0) continue;
+      // Some templates include discounts/returns or totals rows. Skip only fully-empty numeric rows.
+      if (quantity === 0 && unitPrice === 0 && explicitTotal === 0) continue;
 
       lines.push({ itemCode, itemName, quantity, unitPrice, lineTotal });
     }
