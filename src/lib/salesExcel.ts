@@ -67,22 +67,49 @@ function normalizeDigits(input: string): string {
 
 function parseNumberCell(val: any): number {
   if (typeof val === "number" && Number.isFinite(val)) return val;
-  const s0 = normalizeDigits(String(val ?? "").trim());
+  const raw0 = String(val ?? "").trim();
+  const s0 = normalizeDigits(raw0);
   if (!s0) return 0;
+
+  // Handle accounting negatives like (10) or trailing minus like 10-
+  const isParenNeg = /^\(.*\)$/.test(s0);
+  const isTrailingNeg = /-\s*$/.test(s0);
+
+  // Strip common non-numeric noise (units, currency, etc.) while keeping separators.
+  // Keep digits, minus, dots/commas (incl Arabic separators) then normalize.
+  let sClean = s0
+    .replace(/\s+/g, "")
+    .replace(/^\(|\)$/g, "")
+    .replace(/[^0-9,\.\-٬٫]/g, "");
 
   // Normalize decimal separators and remove thousands separators
   // - If we have both "," and "." -> assume comma is thousands.
   // - If we have only "," -> assume comma is decimal.
-  const hasComma = s0.includes(",");
-  const hasDot = s0.includes(".");
-  const s = s0
-    .replace(/\s+/g, "")
-    .replace(/٬/g, "") // Arabic thousands separator
-    .replace(/٫/g, ".") // Arabic decimal separator
-    .replace(hasComma && !hasDot ? /,/g : /,/g, hasComma && !hasDot ? "." : "");
+  const hasComma = sClean.includes(",");
+  const hasDot = sClean.includes(".");
+
+  // 1) Remove Arabic thousands separator, normalize Arabic decimal separator
+  let s = sClean.replace(/٬/g, "").replace(/٫/g, ".");
+
+  // 2) Normalize commas depending on presence of dot
+  // - If dot exists, commas are thousands => remove.
+  // - If no dot, comma is decimal => replace first comma with dot and remove any others.
+  if (hasComma) {
+    if (hasDot) {
+      s = s.replace(/,/g, "");
+    } else {
+      const parts = s.split(",");
+      s = parts.length === 1 ? s : `${parts[0]}.${parts.slice(1).join("")}`;
+    }
+  }
+
+  // 3) Keep only the first leading minus
+  s = s.replace(/(?!^)-/g, "");
 
   const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
+  if (!Number.isFinite(n)) return 0;
+  const sign = isParenNeg || isTrailingNeg ? -1 : 1;
+  return n * sign;
 }
 
 function findHeaderValue(rows: any[][], keywords: string[]): string {
