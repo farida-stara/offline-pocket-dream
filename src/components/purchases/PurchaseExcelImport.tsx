@@ -467,6 +467,11 @@ export function PurchaseExcelImport(props: {
                 const discount = Math.max(0, Math.min(100, Number(l.discount_percent ?? 0)));
                 return s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0) * (1 - discount / 100);
               }, 0);
+              const expectedSellingTotal = inv.lines.reduce((s, l) => {
+                const expectedSell = Number(l.unit_price ?? 0) * (1 + Number(inv.margin_percent ?? 0) / 100);
+                const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
+                return s + expectedSell * totalQty;
+              }, 0);
               const missingSupplier = !inv.supplier_id;
               const hasUnmatched = inv.lines.some((l) => !l.item_id);
 
@@ -688,7 +693,10 @@ export function PurchaseExcelImport(props: {
                       <div className="text-sm text-muted-foreground">
                         عدد السطور: {linesCount} | إجمالي الكمية: {qtyTotal.toFixed(3)}
                       </div>
-                      <div className="text-lg font-bold">الإجمالي: {total.toFixed(3)} د.ك</div>
+                      <div className="flex flex-col items-end">
+                        <div className="text-sm text-muted-foreground">إجمالي البيع المتوقع: {expectedSellingTotal.toFixed(3)} د.ك</div>
+                        <div className="text-lg font-bold">الإجمالي: {total.toFixed(3)} د.ك</div>
+                      </div>
                     </div>
 
                     <div className="mt-4">
