@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Loader2, Plus, Save, X } from "lucide-react";
+import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -115,6 +115,13 @@ const PurchaseDetails = () => {
     setEditing(false);
     setEditHeader(null);
     setEditLines([]);
+  };
+
+  const removeEditLine = (idx: number) => {
+    setEditLines((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const editTotals = useMemo(() => {
@@ -308,6 +315,7 @@ const PurchaseDetails = () => {
                     <TableHead className="text-center">الكمية المجانية</TableHead>
                     <TableHead className="text-left">سعر الوحدة</TableHead>
                     <TableHead className="text-left">الإجمالي</TableHead>
+                    {editing && <TableHead className="w-12"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -377,6 +385,18 @@ const PurchaseDetails = () => {
                           </TableCell>
                           <TableCell className="text-left tabular-nums font-semibold">
                             {(Number(line.quantity_paid || 0) * Number(line.unit_price || 0)).toFixed(3)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeEditLine(idx)}
+                              disabled={editLines.length <= 1}
+                              title="حذف السطر"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
