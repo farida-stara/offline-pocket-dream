@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface SalesLine {
   id: string;
@@ -26,6 +27,9 @@ const SalesManualEntry = () => {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "transfer" | "credit" | "other">("cash");
   const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
+
+  const [salesRepId, setSalesRepId] = useState<string>("");
+  const [repCollects, setRepCollects] = useState(false);
 
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [newCustomerCode, setNewCustomerCode] = useState("");
@@ -58,6 +62,19 @@ const SalesManualEntry = () => {
         .order("customer_name");
       if (error) throw error;
       return data;
+    },
+  });
+
+  const { data: salesReps } = useQuery({
+    queryKey: ["sales-reps"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales_reps")
+        .select("id, rep_name")
+        .eq("is_active", true)
+        .order("rep_name");
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -106,6 +123,8 @@ const SalesManualEntry = () => {
           total_amount: totalAmount,
           payment_method: finalPaymentMethod || null,
           notes: notes,
+          sales_rep_id: salesRepId || null,
+          rep_collects: repCollects,
         })
         .select()
         .single();
@@ -147,6 +166,8 @@ const SalesManualEntry = () => {
     setPaymentMethod("cash");
     setPaymentMethodOther("");
     setNotes("");
+    setSalesRepId("");
+    setRepCollects(false);
     setLines([{ id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 }]);
   };
 
@@ -214,7 +235,7 @@ const SalesManualEntry = () => {
       <CardContent>
         <div className="space-y-6">
           {/* Header */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">
                 رقم الفاتورة *
@@ -281,6 +302,29 @@ const SalesManualEntry = () => {
                   <Input value={paymentMethodOther} onChange={(e) => setPaymentMethodOther(e.target.value)} placeholder="اكتب طريقة الدفع" />
                 )}
               </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1 block">مندوب المبيعات</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={salesRepId}
+                onChange={(e) => setSalesRepId(e.target.value)}
+              >
+                <option value="">بدون</option>
+                {(salesReps ?? []).map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    {r.rep_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <Checkbox id="rep_collects" checked={repCollects} onCheckedChange={(v) => setRepCollects(Boolean(v))} />
+              <label htmlFor="rep_collects" className="text-sm font-medium">
+                المندوب مسؤول عن التحصيل
+              </label>
             </div>
           </div>
 
