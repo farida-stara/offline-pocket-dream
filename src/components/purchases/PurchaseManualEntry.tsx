@@ -58,6 +58,14 @@ export function PurchaseManualEntry(props: {
     return lines.reduce((sum, line) => sum + line.quantity_paid * line.unit_price, 0);
   };
 
+  const expectedSellingTotal = () => {
+    return lines.reduce((sum, line) => {
+      const totalQty = Number(line.quantity_paid ?? 0) + Number(line.quantity_free ?? 0);
+      const expectedSell = Number(line.unit_price ?? 0) * (1 + Number(marginPercent ?? 0) / 100);
+      return sum + expectedSell * totalQty;
+    }, 0);
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!invoiceNo || !supplierId || !invoiceDate) {
@@ -334,6 +342,7 @@ export function PurchaseManualEntry(props: {
 
             <div className="text-end space-y-1">
               <div className="text-sm text-muted-foreground">عدد السطور: {lines.length}</div>
+              <div className="text-sm text-muted-foreground">إجمالي البيع المتوقع: {expectedSellingTotal().toFixed(3)} د.ك</div>
               <div className="text-xl font-bold">الإجمالي: {actualInvoiceTotal().toFixed(3)} د.ك</div>
             </div>
           </div>
