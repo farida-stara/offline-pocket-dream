@@ -60,10 +60,8 @@ const PurchaseEntry = () => {
         throw new Error(`الرجاء استكمال البيانات التالية (${missing.join(" / ")}) للفاتورة: ${who}`);
       }
 
-      const anyMissingItems = invoices.some((inv) => inv.lines.some((l) => !l.item_id));
-      if (anyMissingItems) {
-        throw new Error("يوجد أسطر بدون صنف (غير مطابق). الرجاء مطابقة جميع الأصناف قبل الحفظ.");
-      }
+      // NOTE: We allow saving even if some lines are unmatched.
+      // Unmatched lines will be stored separately for later correction.
 
       // Check for duplicates
       const invoiceNumbers = invoices.map((inv) => normalizePurchaseInvoiceNo(inv.invoice_no));
@@ -75,12 +73,16 @@ const PurchaseEntry = () => {
       // Save sequentially to keep logic simple
       for (const inv of invoices) {
         const normalizedInvoiceNo = normalizePurchaseInvoiceNo(inv.invoice_no);
-        const validLines = inv.lines.filter((l) => l.item_id && l.quantity_paid > 0 && l.unit_price > 0);
-        if (!validLines.length) {
-          throw new Error(`لا يوجد أسطر صالحة داخل الفاتورة: ${normalizedInvoiceNo}`);
-        }
+        const matchedLines = inv.lines
+          .map((l, idx) => ({ ...l, __line_no: idx + 1 }))
+          .filter((l) => l.item_id && l.quantity_paid > 0 && l.unit_price > 0);
 
-        const totalAmount = validLines.reduce((sum, l) => sum + Number(l.quantity_paid) * Number(l.unit_price), 0);
+        const unmatchedLines = inv.lines
+          .map((l, idx) => ({ ...l, __line_no: idx + 1 }))
+          .filter((l) => !l.item_id);
+
+        // Total reflects only matched lines (unmatched lines are pending review)
+        const totalAmount = matchedLines.reduce((sum, l) => sum + Number(l.quantity_paid) * Number(l.unit_price), 0);
 
         const { data: header, error: headerError } = await supabase
           .from("purchase_headers")
@@ -98,22 +100,40 @@ const PurchaseEntry = () => {
 
         if (headerError) throw headerError;
 
-        const { error: linesError } = await supabase.from("purchase_lines").insert(
-          validLines.map((line, idx) => ({
-            purchase_header_id: header.id,
-            line_no: idx + 1,
-            item_id: line.item_id,
-            quantity_paid: line.quantity_paid,
-            quantity_free: line.quantity_free,
-            unit_price: line.unit_price,
-          })),
-        );
+        if (matchedLines.length > 0) {
+          const { error: linesError } = await supabase.from("purchase_lines").insert(
+            matchedLines.map((line, idx) => ({
+              purchase_header_id: header.id,
+              // keep purchase_lines numbering compact
+              line_no: idx + 1,
+              item_id: line.item_id,
+              quantity_paid: line.quantity_paid,
+              quantity_free: line.quantity_free,
+              unit_price: line.unit_price,
+            })),
+          );
+          if (linesError) throw linesError;
+        }
 
-        if (linesError) throw linesError;
+        if (unmatchedLines.length > 0) {
+          const { error: unmatchedError } = await supabase.from("purchase_unmatched_lines").insert(
+            unmatchedLines.map((line) => ({
+              purchase_header_id: header.id,
+              line_no: (line as any).__line_no,
+              source_name: (line as any).source_name ?? null,
+              item_id: null,
+              quantity_paid: Number((line as any).quantity_paid ?? 0),
+              quantity_free: Number((line as any).quantity_free ?? 0),
+              unit_price: Number((line as any).unit_price ?? 0),
+            })),
+          );
+          if (unmatchedError) throw unmatchedError;
+        }
 
         await supabase.from("invoice_register").insert({
           invoice_no: normalizedInvoiceNo,
           invoice_type: "PURCHASE",
+          status: unmatchedLines.length > 0 ? "needs_review" : "approved",
         });
       }
     },

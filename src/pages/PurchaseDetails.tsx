@@ -64,7 +64,15 @@ const PurchaseDetails = () => {
 
       if (linesError) throw linesError;
 
-      return { header, lines };
+      const { data: unmatchedLines, error: unmatchedError } = await supabase
+        .from("purchase_unmatched_lines")
+        .select("id,line_no,source_name,item_id,quantity_paid,quantity_free,unit_price")
+        .eq("purchase_header_id", id)
+        .order("line_no");
+
+      if (unmatchedError) throw unmatchedError;
+
+      return { header, lines, unmatchedLines: unmatchedLines ?? [] };
     },
     enabled: !!id,
   });
@@ -103,6 +111,8 @@ const PurchaseDetails = () => {
 
   const [editHeader, setEditHeader] = useState<any>(null);
   const [editLines, setEditLines] = useState<any[]>([]);
+  const [editUnmatched, setEditUnmatched] = useState<any[]>([]);
+  const [removedUnmatchedIds, setRemovedUnmatchedIds] = useState<string[]>([]);
 
   const startEdit = () => {
     if (!purchase) return;
@@ -121,6 +131,8 @@ const PurchaseDetails = () => {
         unit_price: Number(l.unit_price ?? 0),
       })),
     );
+    setEditUnmatched((purchase.unmatchedLines ?? []).map((u: any) => ({ ...u })));
+    setRemovedUnmatchedIds([]);
     setEditing(true);
   };
 
@@ -128,6 +140,8 @@ const PurchaseDetails = () => {
     setEditing(false);
     setEditHeader(null);
     setEditLines([]);
+    setEditUnmatched([]);
+    setRemovedUnmatchedIds([]);
   };
 
   const removeEditLine = (idx: number) => {
@@ -186,6 +200,23 @@ const PurchaseDetails = () => {
         })),
       );
       if (insError) throw insError;
+
+      // Remove any unmatched lines that were converted into real lines during edit
+      if (removedUnmatchedIds.length > 0) {
+        const { error: delUnmatchedError } = await supabase
+          .from("purchase_unmatched_lines")
+          .delete()
+          .in("id", removedUnmatchedIds);
+        if (delUnmatchedError) throw delUnmatchedError;
+      }
+
+      const remainingUnmatched = editUnmatched.filter((u) => !removedUnmatchedIds.includes(u.id)).length;
+      const { error: statusError } = await supabase
+        .from("invoice_register")
+        .update({ status: remainingUnmatched > 0 ? "needs_review" : "approved" })
+        .eq("invoice_type", "PURCHASE")
+        .eq("invoice_no", purchase?.header?.invoice_no ?? "");
+      if (statusError) throw statusError;
     },
     onSuccess: async () => {
       toast.success("تم تحديث الفاتورة");
@@ -233,6 +264,7 @@ const PurchaseDetails = () => {
   }
 
   const { header, lines } = purchase;
+  const unmatchedLines = (purchase as any).unmatchedLines ?? [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
@@ -486,6 +518,98 @@ const PurchaseDetails = () => {
             </div>
           </CardContent>
         </Card>
+
+        {unmatchedLines.length > 0 && (
+          <Card className="mt-6 ring-1 ring-accent/30">
+            <CardHeader>
+              <CardTitle>أصناف غير مطابقة (بحاجة لمراجعة)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!editing ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-right w-12">#</TableHead>
+                        <TableHead className="text-right">اسم/كود من الملف</TableHead>
+                        <TableHead className="text-center">المدفوعة</TableHead>
+                        <TableHead className="text-center">المجانية</TableHead>
+                        <TableHead className="text-left">سعر الشراء</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {unmatchedLines.map((u: any) => (
+                        <TableRow key={u.id}>
+                          <TableCell className="text-muted-foreground">{u.line_no}</TableCell>
+                          <TableCell className="font-medium">{u.source_name || "-"}</TableCell>
+                          <TableCell className="text-center">{Number(u.quantity_paid ?? 0)}</TableCell>
+                          <TableCell className="text-center">{Number(u.quantity_free ?? 0)}</TableCell>
+                          <TableCell className="text-left tabular-nums">{Number(u.unit_price ?? 0).toFixed(3)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {editUnmatched
+                    .filter((u) => !removedUnmatchedIds.includes(u.id))
+                    .map((u: any) => (
+                      <div key={u.id} className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-5">
+                          <p className="text-xs text-muted-foreground">غير مطابق</p>
+                          <p className="text-sm font-medium">{u.source_name || "-"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            مدفوعة: {Number(u.quantity_paid ?? 0)} | مجانية: {Number(u.quantity_free ?? 0)} | سعر: {Number(u.unit_price ?? 0).toFixed(3)}
+                          </p>
+                        </div>
+                        <div className="col-span-5">
+                          <label className="text-xs font-medium mb-1 block">اختيار الصنف الصحيح</label>
+                          <select
+                            className="w-full p-2 border rounded-md"
+                            value={u.item_id ?? ""}
+                            onChange={(e) => setEditUnmatched((prev) => prev.map((p) => (p.id === u.id ? { ...p, item_id: e.target.value } : p)))}
+                          >
+                            <option value="">اختر الصنف</option>
+                            {(items ?? []).map((it: any) => (
+                              <option key={it.id} value={it.id}>
+                                {it.item_code} - {it.item_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2 flex justify-end">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={!u.item_id}
+                            onClick={() => {
+                              setEditLines((prev) => [
+                                ...prev,
+                                {
+                                  id: crypto.randomUUID(),
+                                  item_id: u.item_id,
+                                  quantity_paid: Number(u.quantity_paid ?? 0),
+                                  quantity_free: Number(u.quantity_free ?? 0),
+                                  unit_price: Number(u.unit_price ?? 0),
+                                },
+                              ]);
+                              setRemovedUnmatchedIds((prev) => [...prev, u.id]);
+                            }}
+                          >
+                            إضافة
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  {editUnmatched.filter((u) => !removedUnmatchedIds.includes(u.id)).length === 0 && (
+                    <div className="text-sm text-muted-foreground">لا توجد أصناف غير مطابقة متبقية.</div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {editing && (
           <div className="mt-3">
