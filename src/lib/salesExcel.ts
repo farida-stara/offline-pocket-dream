@@ -5,6 +5,9 @@ export interface SalesExcelLine {
   itemCode: string;
   itemName: string;
   quantity: number;
+  qtySold?: number;
+  qtyReturned?: number;
+  qtyWithdrawn?: number;
   unitPrice: number;
   lineTotal: number;
   notes?: string;
@@ -159,6 +162,9 @@ function findTableHeaderRow(rows: any[][]): {
   nameCol: number;
   qtyCol: number;
   qtyCols: number[];
+  qtySoldCol?: number | null;
+  qtyReturnedCol?: number | null;
+  qtyWithdrawnCol?: number | null;
   priceCol: number;
   totalCol: number | null;
 } | null {
@@ -219,20 +225,38 @@ function findTableHeaderRow(rows: any[][]): {
     for (const cand of candidates) {
       const codeCol = normRow.findIndex((h) => cand.code.some((k) => includes(h, normalizeArabic(k))));
       const nameCol = normRow.findIndex((h) => cand.name.some((k) => includes(h, normalizeArabic(k))));
-        const qtyCols = normRow
-          .map((h, idx) => ({ h, idx }))
-          .filter(({ h }) => cand.qty.some((k) => includes(h, normalizeArabic(k))))
-          .map(({ idx }) => idx);
-        const qtyCol = qtyCols[0] ?? -1;
+      const qtyCols = normRow
+        .map((h, idx) => ({ h, idx }))
+        .filter(({ h }) => cand.qty.some((k) => includes(h, normalizeArabic(k))))
+        .map(({ idx }) => idx);
+      const qtyCol = qtyCols[0] ?? -1;
       const priceCol = normRow.findIndex((h) => cand.price.some((k) => includes(h, normalizeArabic(k))));
       if (nameCol !== -1 && qtyCol !== -1 && priceCol !== -1) {
         const totalCol = normRow.findIndex((h) => cand.total.some((k) => includes(h, normalizeArabic(k))));
+
+        // Try to classify qty columns by header text
+        const qtySoldCol = qtyCols.find((i) => {
+          const h = normRow[i] ?? "";
+          return includes(h, normalizeArabic("مباع")) || includes(h, "sold") || includes(h, normalizeArabic("الكمية المباعه"));
+        });
+        const qtyReturnedCol = qtyCols.find((i) => {
+          const h = normRow[i] ?? "";
+          return includes(h, normalizeArabic("مرتجع")) || includes(h, "returned");
+        });
+        const qtyWithdrawnCol = qtyCols.find((i) => {
+          const h = normRow[i] ?? "";
+          return includes(h, normalizeArabic("مسحوب")) || includes(h, "withdrawn") || includes(h, normalizeArabic("سحب"));
+        });
+
         return {
           headerRowIndex: r,
           codeCol: codeCol === -1 ? null : codeCol,
           nameCol,
           qtyCol,
-            qtyCols,
+          qtyCols,
+          qtySoldCol: qtySoldCol ?? null,
+          qtyReturnedCol: qtyReturnedCol ?? null,
+          qtyWithdrawnCol: qtyWithdrawnCol ?? null,
           priceCol,
           totalCol: totalCol === -1 ? null : totalCol,
         };
@@ -248,6 +272,9 @@ function findTableHeaderRowByData(rows: any[][]): {
   nameCol: number;
   qtyCol: number;
   qtyCols: number[];
+  qtySoldCol?: number | null;
+  qtyReturnedCol?: number | null;
+  qtyWithdrawnCol?: number | null;
   priceCol: number;
   totalCol: number | null;
 } | null {
@@ -272,6 +299,9 @@ function findTableHeaderRowByData(rows: any[][]): {
           nameCol: c,
           qtyCol: c + 1,
           qtyCols: [c + 1],
+          qtySoldCol: null,
+          qtyReturnedCol: null,
+          qtyWithdrawnCol: null,
           priceCol: c + 2,
           totalCol: c + 3 < maxCols ? c + 3 : null,
         };
@@ -325,7 +355,12 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
 
       const itemCode = tableMeta.codeCol != null ? String(row[tableMeta.codeCol] ?? "").trim() : "";
       const itemName = String(row[tableMeta.nameCol] ?? "").trim();
-      const quantity = pickQuantityFromRow(row, tableMeta.qtyCols ?? [], tableMeta.qtyCol);
+      const qtySold = tableMeta.qtySoldCol != null ? parseNumberCell(row?.[tableMeta.qtySoldCol]) : 0;
+      const qtyReturned = tableMeta.qtyReturnedCol != null ? parseNumberCell(row?.[tableMeta.qtyReturnedCol]) : 0;
+      const qtyWithdrawn = tableMeta.qtyWithdrawnCol != null ? parseNumberCell(row?.[tableMeta.qtyWithdrawnCol]) : 0;
+
+      // quantity is the main quantity used for totals. Prefer "sold" if present.
+      const quantity = qtySold !== 0 ? qtySold : pickQuantityFromRow(row, tableMeta.qtyCols ?? [], tableMeta.qtyCol);
       const unitPrice = parseNumberCell(row[tableMeta.priceCol]);
       const explicitTotal = tableMeta.totalCol != null ? parseNumberCell(row[tableMeta.totalCol]) : 0;
       const lineTotal = explicitTotal || quantity * unitPrice;
@@ -334,7 +369,22 @@ export function parseSalesExcel(workbook: XLSX.WorkBook): SalesExcelInvoice[] {
       // Some templates include discounts/returns or totals rows. Skip only fully-empty numeric rows.
       if (quantity === 0 && unitPrice === 0 && explicitTotal === 0) continue;
 
-      lines.push({ itemCode, itemName, quantity, unitPrice, lineTotal });
+      const parts: string[] = [];
+      if (qtySold !== 0 || qtyReturned !== 0 || qtyWithdrawn !== 0) {
+        parts.push(`__qty__:${JSON.stringify({ sold: qtySold, returned: qtyReturned, withdrawn: qtyWithdrawn })}`);
+      }
+
+      lines.push({
+        itemCode,
+        itemName,
+        quantity,
+        qtySold,
+        qtyReturned,
+        qtyWithdrawn,
+        unitPrice,
+        lineTotal,
+        notes: parts.length ? parts.join("\n") : undefined,
+      });
     }
 
     if (lines.length === 0) continue;

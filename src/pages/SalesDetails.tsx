@@ -29,6 +29,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
 import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
+import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 
 const SalesDetails = () => {
   const navigate = useNavigate();
@@ -261,6 +262,7 @@ const SalesDetails = () => {
                       lines: (lines ?? []).map((l: any) => ({
                         itemName: l.item?.item_name || l.item?.item_code || "-",
                         qty: Number(l.quantity || 0),
+                        quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
                         unitPrice: Number(l.unit_price || 0),
                         lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
                       })),
@@ -389,7 +391,9 @@ const SalesDetails = () => {
                     <TableHead className="text-right w-12">#</TableHead>
                     <TableHead className="text-right">كود الصنف</TableHead>
                     <TableHead className="text-right">اسم الصنف</TableHead>
-                    <TableHead className="text-center">الكمية</TableHead>
+                      <TableHead className="text-center">الكمية المباعه</TableHead>
+                      <TableHead className="text-center">مرتجع لعدم البيع</TableHead>
+                      <TableHead className="text-center">الكمية المسحوبة</TableHead>
                     <TableHead className="text-left">سعر الوحدة</TableHead>
                     <TableHead className="text-left">الإجمالي</TableHead>
                     {editing && <TableHead className="w-12"></TableHead>}
@@ -397,18 +401,23 @@ const SalesDetails = () => {
                 </TableHeader>
                 <TableBody>
                   {!editing
-                    ? lines.map((line: any) => (
+                      ? lines.map((line: any) => {
+                          const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+                          return (
                         <TableRow key={line.id}>
                           <TableCell className="text-muted-foreground">{line.line_no}</TableCell>
                           <TableCell className="font-mono">{line.item?.item_code || "-"}</TableCell>
                           <TableCell className="font-medium">{line.item?.item_name || "-"}</TableCell>
-                          <TableCell className="text-center">{line.quantity}</TableCell>
+                          <TableCell className="text-center tabular-nums">{Number(q.sold || 0).toFixed(3)}</TableCell>
+                          <TableCell className="text-center tabular-nums">{Number(q.returned || 0).toFixed(3)}</TableCell>
+                          <TableCell className="text-center tabular-nums">{Number(q.withdrawn || 0).toFixed(3)}</TableCell>
                           <TableCell className="text-left tabular-nums">{Number(line.unit_price).toFixed(3)}</TableCell>
                           <TableCell className="text-left tabular-nums font-semibold">
                             {Number(line.line_total || line.quantity * line.unit_price).toFixed(3)}
                           </TableCell>
                         </TableRow>
-                      ))
+                          );
+                        })
                     : editLines.map((line: any, idx: number) => (
                         <TableRow key={line.id ?? idx}>
                           <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
