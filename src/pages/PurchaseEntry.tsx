@@ -85,7 +85,10 @@ const PurchaseEntry = () => {
           .filter((l) => !l.item_id);
 
         // Total reflects only matched lines (unmatched lines are pending review)
-        const totalAmount = matchedLines.reduce((sum, l) => sum + Number(l.quantity_paid) * Number(l.unit_price), 0);
+        const totalAmount = matchedLines.reduce((sum, l) => {
+          const discount = Math.max(0, Math.min(100, Number((l as any).discount_percent ?? 0)));
+          return sum + Number(l.quantity_paid) * Number(l.unit_price) * (1 - discount / 100);
+        }, 0);
 
         const { data: header, error: headerError } = await supabase
           .from("purchase_headers")
@@ -113,6 +116,7 @@ const PurchaseEntry = () => {
               quantity_paid: line.quantity_paid,
               quantity_free: line.quantity_free,
               unit_price: line.unit_price,
+              discount_percent: Number((line as any).discount_percent ?? 0),
             })),
           );
           if (linesError) throw linesError;
@@ -128,6 +132,7 @@ const PurchaseEntry = () => {
               quantity_paid: Number((line as any).quantity_paid ?? 0),
               quantity_free: Number((line as any).quantity_free ?? 0),
               unit_price: Number((line as any).unit_price ?? 0),
+                discount_percent: Number((line as any).discount_percent ?? 0),
             })),
           );
           if (unmatchedError) throw unmatchedError;
@@ -154,7 +159,12 @@ const PurchaseEntry = () => {
     invoices: invoices.length,
     lines: invoices.reduce((s, inv) => s + inv.lines.length, 0),
     total: invoices.reduce(
-      (s, inv) => s + inv.lines.reduce((ss, l) => ss + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0), 0),
+      (s, inv) =>
+        s +
+        inv.lines.reduce((ss, l: any) => {
+          const discount = Math.max(0, Math.min(100, Number(l.discount_percent ?? 0)));
+          return ss + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0) * (1 - discount / 100);
+        }, 0),
       0,
     ),
   };
