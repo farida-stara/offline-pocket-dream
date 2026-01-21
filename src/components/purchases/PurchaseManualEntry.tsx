@@ -30,7 +30,8 @@ export function PurchaseManualEntry(props: {
   const [invoiceNo, setInvoiceNo] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  type PaymentMethod = "cash" | "credit" | "knet" | "bank_transfer" | "other";
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
   const [marginPercent, setMarginPercent] = useState<number>(0);
@@ -78,7 +79,9 @@ export function PurchaseManualEntry(props: {
         throw new Error(`رقم الفاتورة "${normalizedInvoiceNo}" موجود مسبقاً`);
       }
 
-      const finalPaymentMethod = paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
+       // Keep payment_method aligned with Payment Ledger methods.
+       // If user selects "other", we store "other" here.
+       const finalPaymentMethod = paymentMethod;
 
       const { data: header, error: headerError } = await supabase
         .from("purchase_headers")
@@ -88,7 +91,10 @@ export function PurchaseManualEntry(props: {
           invoice_date: invoiceDate,
           total_amount: totalAmount,
           payment_method: finalPaymentMethod || null,
-          notes,
+          notes:
+            paymentMethod === "other" && paymentMethodOther.trim()
+              ? `${notes ? `${notes}\n` : ""}طريقة الدفع (أخرى): ${paymentMethodOther.trim()}`
+              : notes,
         })
         .select()
         .single();
@@ -222,11 +228,15 @@ export function PurchaseManualEntry(props: {
             <div>
               <label className="text-sm font-medium mb-1 block">طريقة الدفع</label>
               <div className="space-y-2">
-                <select className="w-full p-2 border rounded-md" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                  <option value="cash">نقد</option>
-                  <option value="card">بطاقة</option>
-                  <option value="transfer">تحويل</option>
-                  <option value="credit">آجل</option>
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                >
+                  <option value="cash">كاش</option>
+                  <option value="credit">أجل</option>
+                  <option value="knet">كي نت</option>
+                  <option value="bank_transfer">تحويل بنكي</option>
                   <option value="other">أخرى…</option>
                 </select>
                 {paymentMethod === "other" && (
