@@ -16,6 +16,7 @@ import InventoryReport from "./pages/InventoryReport";
 import ItemsMaster from "./pages/ItemsMaster";
 import SuppliersMaster from "./pages/SuppliersMaster";
 import CustomersMaster from "./pages/CustomersMaster";
+import PaymentsLedger from "./pages/PaymentsLedger";
 import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -125,6 +126,15 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <InventoryReport />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/payments"
+              element={
+                <ProtectedRoute>
+                  <PaymentsLedger />
                 </ProtectedRoute>
               }
             />

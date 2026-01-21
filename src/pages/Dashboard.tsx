@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2 } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -72,6 +72,13 @@ const Dashboard = () => {
       icon: Users,
       color: "bg-muted",
       route: "/reports",
+    },
+    {
+      title: "سجل الدفع",
+      description: "تسجيل وعرض الدفعات (كاش/أجل/كي نت/تحويل)",
+      icon: CreditCard,
+      color: "bg-muted",
+      route: "/payments",
     },
   ];
 
