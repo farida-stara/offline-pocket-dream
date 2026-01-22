@@ -200,12 +200,19 @@ const InvoicePreviewCard = ({
                   const sold = q.sold;
 
                   const updateQtyMeta = (next: { returned?: number; withdrawn?: number }) => {
+                    const nextReturned = next.returned ?? returned;
+                    const nextWithdrawn = next.withdrawn ?? withdrawn;
+                    const nextSold = Number(nextWithdrawn) - Number(nextReturned);
+
                     const merged = mergeNotesWithQuantities(line.notes ?? null, {
-                      sold: line.quantity,
-                      returned: next.returned ?? returned,
-                      withdrawn: next.withdrawn ?? withdrawn,
+                      sold: nextSold,
+                      returned: nextReturned,
+                      withdrawn: nextWithdrawn,
                     });
                     updateLineField(invIdx, lineIdx, "notes", merged ?? "");
+
+                    // Keep the main quantity (used in totals) always aligned with the sold quantity.
+                    updateLineField(invIdx, lineIdx, "quantity", nextSold);
                   };
 
                   const expectedValue = line.matchedItemId
@@ -273,7 +280,9 @@ const InvoicePreviewCard = ({
                             step="0.001"
                             className="w-20 text-end"
                             value={sold}
-                            onChange={(e) => updateLineField(invIdx, lineIdx, "quantity", parseFloat(e.target.value) || 0)}
+                            readOnly
+                            disabled
+                            title="يتم احتساب الكمية المباعه تلقائياً = الكمية المسحوبة - مرتجع لعدم البيع"
                           />
                         ) : (
                           Number(sold || 0).toFixed(3)
@@ -457,8 +466,13 @@ const SalesExcelImport = () => {
     const mapped: PreviewInvoice[] = parsed.map((inv) => {
       const matchedLines: MatchedLine[] = inv.lines.map((line) => {
         const match = matchItem(line.itemCode, line.itemName);
+
+        // Ensure "quantity" (used for totals) always reflects sold quantity.
+        // Sold is defined as: withdrawn - returned.
+        const q = getDisplayQuantities({ quantity: (line as any).quantity, notes: (line as any).notes ?? null });
         return {
           ...line,
+          quantity: q.sold,
           matchedItemId: match.id,
           matchedItemName: match.name,
         };
