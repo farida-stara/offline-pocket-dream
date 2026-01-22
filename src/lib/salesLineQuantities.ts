@@ -59,6 +59,14 @@ export function mergeNotesWithQuantities(
 
 export function getDisplayQuantities(line: { quantity?: any; notes?: string | null }): SalesLineQuantities {
   const parsed = parseLineQuantities(line.notes);
-  if (parsed) return parsed;
+  // Business rule: sold quantity is always derived from (withdrawn - returned)
+  // when we have the detailed quantities payload.
+  if (parsed) {
+    return {
+      withdrawn: safeNum(parsed.withdrawn),
+      returned: safeNum(parsed.returned),
+      sold: safeNum(parsed.withdrawn) - safeNum(parsed.returned),
+    };
+  }
   return { sold: safeNum(line.quantity), returned: 0, withdrawn: 0 };
 }
