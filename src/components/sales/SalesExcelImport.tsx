@@ -11,6 +11,7 @@ import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/l
 import { fuzzyMatch } from "@/lib/fuzzy";
 import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
 import { getDisplayQuantities, mergeNotesWithQuantities } from "@/lib/salesLineQuantities";
+import { useSalesExpectedValue } from "@/hooks/useSalesExpectedValue";
 
 const LAST_IMPORT_STORAGE_KEY = "sales_invoices:last_import:v1";
 const MAX_CACHED_FILE_BYTES = 4_500_000;
@@ -54,6 +55,287 @@ interface PreviewInvoice extends Omit<SalesExcelInvoice, "lines"> {
   matchedCustomerId: string | null;
   editing: boolean;
 }
+
+type InvoiceCardProps = {
+  inv: PreviewInvoice;
+  invIdx: number;
+  items: any[] | undefined;
+  customers: any[] | undefined;
+  updateInvoiceField: (idx: number, field: keyof PreviewInvoice, value: any) => void;
+  updateLineField: (invIdx: number, lineIdx: number, field: keyof MatchedLine, value: any) => void;
+  removeInvoice: (idx: number) => void;
+  removeLine: (invIdx: number, lineIdx: number) => void;
+  addLine: (invIdx: number) => void;
+};
+
+const InvoicePreviewCard = ({
+  inv,
+  invIdx,
+  items,
+  customers,
+  updateInvoiceField,
+  updateLineField,
+  removeInvoice,
+  removeLine,
+  addLine,
+}: InvoiceCardProps) => {
+  const hasUnmatched = inv.lines.some((l) => !l.matchedItemId);
+  const lineCount = inv.lines.length;
+  const grandTotal = inv.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0).toFixed(3);
+
+  const itemIdsForInvoice = useMemo(
+    () => inv.lines.map((l) => l.matchedItemId).filter(Boolean),
+    [inv.lines]
+  );
+
+  const { data: expectedMap } = useSalesExpectedValue({
+    itemIds: itemIdsForInvoice,
+    invoiceDate: inv.invoiceDate,
+  });
+
+  return (
+    <Card key={invIdx} className={hasUnmatched ? "border-amber-400" : "border-green-400"}>
+      <CardHeader className="pb-2">
+        <div className="flex justify-between items-start">
+          <div className="flex items-center gap-2">
+            {hasUnmatched ? (
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+            ) : (
+              <Check className="h-5 w-5 text-green-500" />
+            )}
+            <CardTitle className="text-lg">
+              {inv.sheetName} — {normalizeSalesInvoiceNo(inv.invoiceNo)}
+            </CardTitle>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => updateInvoiceField(invIdx, "editing", !inv.editing)}
+            >
+              <Edit2 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => removeInvoice(invIdx)}>
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {inv.editing ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <label className="text-sm font-medium">رقم الفاتورة</label>
+              <Input
+                value={inv.invoiceNo}
+                onChange={(e) => updateInvoiceField(invIdx, "invoiceNo", e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">التاريخ</label>
+              <Input
+                type="date"
+                value={inv.invoiceDate}
+                onChange={(e) => updateInvoiceField(invIdx, "invoiceDate", e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">العميل</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={inv.matchedCustomerId ?? ""}
+                onChange={(e) => updateInvoiceField(invIdx, "matchedCustomerId", e.target.value || null)}
+              >
+                <option value="">بيع نقدي</option>
+                {customers?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.customer_code} - {c.customer_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">طريقة الدفع</label>
+              <Input
+                value={inv.paymentMethod}
+                onChange={(e) => updateInvoiceField(invIdx, "paymentMethod", e.target.value)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground mb-2">
+            {inv.invoiceDate} |{" "}
+            {inv.matchedCustomerId
+              ? customers?.find((c) => c.id === inv.matchedCustomerId)?.customer_name ?? "عميل"
+              : "بيع نقدي"}{" "}
+            | {inv.paymentMethod}
+          </div>
+        )}
+
+        {/* Lines table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="p-2 text-start">م</th>
+                <th className="p-2 text-start">الكود</th>
+                <th className="p-2 text-start">الصنف (Excel)</th>
+                <th className="p-2 text-start">مطابق</th>
+                <th className="p-2 text-end">الكمية المسحوبة</th>
+                <th className="p-2 text-end">مرتجع لعدم البيع</th>
+                <th className="p-2 text-end">الكمية المباعه</th>
+                <th className="p-2 text-end">السعر للوحدة</th>
+                <th className="p-2 text-end">الإجمالي</th>
+                <th className="p-2 text-end">إجمالي البيع المتوقع (ف)</th>
+                <th className="p-2 text-end">فرق البيع عن المتوقع</th>
+                <th className="p-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {inv.lines.map((line, lineIdx) => (
+                (() => {
+                  const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+                  const returned = q.returned;
+                  const withdrawn = q.withdrawn;
+                  const sold = q.sold;
+
+                  const updateQtyMeta = (next: { returned?: number; withdrawn?: number }) => {
+                    const merged = mergeNotesWithQuantities(line.notes ?? null, {
+                      sold: line.quantity,
+                      returned: next.returned ?? returned,
+                      withdrawn: next.withdrawn ?? withdrawn,
+                    });
+                    updateLineField(invIdx, lineIdx, "notes", merged ?? "");
+                  };
+
+                  const expectedValue = line.matchedItemId
+                    ? Number(expectedMap?.[line.matchedItemId]?.expectedValue ?? 0)
+                    : 0;
+                  const actualLineTotal = Number(line.quantity * line.unitPrice);
+                  const diffFromExpected = actualLineTotal - expectedValue;
+
+                  return (
+                    <tr key={lineIdx} className={line.matchedItemId ? "" : "bg-amber-50"}>
+                      <td className="p-2">{lineIdx + 1}</td>
+                      <td className="p-2">{line.itemCode}</td>
+                      <td className="p-2">{line.itemName}</td>
+                      <td className="p-2">
+                        {inv.editing || !line.matchedItemId ? (
+                          <select
+                            className="w-full p-1 border rounded text-sm"
+                            value={line.matchedItemId ?? ""}
+                            onChange={(e) => updateLineField(invIdx, lineIdx, "matchedItemId", e.target.value || null)}
+                          >
+                            <option value="">اختر الصنف</option>
+                            {items?.map((it) => (
+                              <option key={it.id} value={it.id}>
+                                {it.item_code} - {it.item_name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-green-700">{line.matchedItemName}</span>
+                        )}
+                      </td>
+
+                      <td className="p-2 text-end tabular-nums">
+                        {inv.editing ? (
+                          <Input
+                            type="number"
+                            step="0.001"
+                            className="w-20 text-end"
+                            value={withdrawn}
+                            onChange={(e) => updateQtyMeta({ withdrawn: parseFloat(e.target.value) || 0 })}
+                          />
+                        ) : (
+                          Number(withdrawn || 0).toFixed(3)
+                        )}
+                      </td>
+
+                      <td className="p-2 text-end tabular-nums">
+                        {inv.editing ? (
+                          <Input
+                            type="number"
+                            step="0.001"
+                            className="w-20 text-end"
+                            value={returned}
+                            onChange={(e) => updateQtyMeta({ returned: parseFloat(e.target.value) || 0 })}
+                          />
+                        ) : (
+                          Number(returned || 0).toFixed(3)
+                        )}
+                      </td>
+
+                      <td className="p-2 text-end tabular-nums">
+                        {inv.editing ? (
+                          <Input
+                            type="number"
+                            step="0.001"
+                            className="w-20 text-end"
+                            value={sold}
+                            onChange={(e) => updateLineField(invIdx, lineIdx, "quantity", parseFloat(e.target.value) || 0)}
+                          />
+                        ) : (
+                          Number(sold || 0).toFixed(3)
+                        )}
+                      </td>
+
+                      <td className="p-2 text-end tabular-nums">
+                        {inv.editing ? (
+                          <Input
+                            type="number"
+                            step="0.001"
+                            className="w-24 text-end"
+                            value={line.unitPrice}
+                            onChange={(e) => updateLineField(invIdx, lineIdx, "unitPrice", parseFloat(e.target.value) || 0)}
+                          />
+                        ) : (
+                          line.unitPrice.toFixed(3)
+                        )}
+                      </td>
+
+                      <td className="p-2 text-end tabular-nums">{actualLineTotal.toFixed(3)}</td>
+                      <td className="p-2 text-end tabular-nums">{expectedValue.toFixed(3)}</td>
+                      <td className="p-2 text-end tabular-nums">{diffFromExpected.toFixed(3)}</td>
+
+                      <td className="p-2">
+                        {inv.editing && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeLine(invIdx, lineIdx)}
+                            disabled={inv.lines.length <= 1}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })()
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {inv.editing && (
+          <div className="mt-3">
+            <Button type="button" variant="outline" onClick={() => addLine(invIdx)}>
+              <Plus className="h-4 w-4 ml-2" />
+              إضافة سطر
+            </Button>
+          </div>
+        )}
+
+        {/* Summary */}
+        <div className="flex justify-between items-center mt-4 pt-2 border-t">
+          <span className="text-sm text-muted-foreground">عدد الأصناف: {lineCount}</span>
+          <span className="font-bold">الإجمالي: {grandTotal} د.ك</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const SalesExcelImport = () => {
   const queryClient = useQueryClient();
@@ -419,296 +701,20 @@ const SalesExcelImport = () => {
             </Button>
           </div>
 
-          {previews.map((inv, invIdx) => {
-            const hasUnmatched = inv.lines.some((l) => !l.matchedItemId);
-            const lineCount = inv.lines.length;
-            const grandTotal = inv.lines
-              .reduce((sum, l) => sum + l.quantity * l.unitPrice, 0)
-              .toFixed(3);
-
-            return (
-              <Card
-                key={invIdx}
-                className={hasUnmatched ? "border-amber-400" : "border-green-400"}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2">
-                      {hasUnmatched ? (
-                        <AlertCircle className="h-5 w-5 text-amber-500" />
-                      ) : (
-                        <Check className="h-5 w-5 text-green-500" />
-                      )}
-                      <CardTitle className="text-lg">
-                        {inv.sheetName} — {normalizeSalesInvoiceNo(inv.invoiceNo)}
-                      </CardTitle>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          updateInvoiceField(invIdx, "editing", !inv.editing)
-                        }
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeInvoice(invIdx)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {inv.editing ? (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div>
-                        <label className="text-sm font-medium">رقم الفاتورة</label>
-                        <Input
-                          value={inv.invoiceNo}
-                          onChange={(e) =>
-                            updateInvoiceField(invIdx, "invoiceNo", e.target.value)
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">التاريخ</label>
-                        <Input
-                          type="date"
-                          value={inv.invoiceDate}
-                          onChange={(e) =>
-                            updateInvoiceField(invIdx, "invoiceDate", e.target.value)
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">العميل</label>
-                        <select
-                          className="w-full p-2 border rounded-md"
-                          value={inv.matchedCustomerId ?? ""}
-                          onChange={(e) =>
-                            updateInvoiceField(
-                              invIdx,
-                              "matchedCustomerId",
-                              e.target.value || null
-                            )
-                          }
-                        >
-                          <option value="">بيع نقدي</option>
-                          {customers?.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.customer_code} - {c.customer_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">طريقة الدفع</label>
-                        <Input
-                          value={inv.paymentMethod}
-                          onChange={(e) =>
-                            updateInvoiceField(invIdx, "paymentMethod", e.target.value)
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-muted-foreground mb-2">
-                      {inv.invoiceDate} |{" "}
-                      {inv.matchedCustomerId
-                        ? customers?.find((c) => c.id === inv.matchedCustomerId)
-                            ?.customer_name ?? "عميل"
-                        : "بيع نقدي"}{" "}
-                      | {inv.paymentMethod}
-                    </div>
-                  )}
-
-                  {/* Lines table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="p-2 text-start">م</th>
-                          <th className="p-2 text-start">الكود</th>
-                          <th className="p-2 text-start">الصنف (Excel)</th>
-                          <th className="p-2 text-start">مطابق</th>
-                          <th className="p-2 text-end">الكمية المباعه</th>
-                          <th className="p-2 text-end">مرتجع لعدم البيع</th>
-                          <th className="p-2 text-end">الكمية المسحوبة</th>
-                          <th className="p-2 text-end">السعر</th>
-                          <th className="p-2 text-end">الإجمالي</th>
-                          <th className="p-2"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {inv.lines.map((line, lineIdx) => (
-                          (() => {
-                            const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
-                            const returned = q.returned;
-                            const withdrawn = q.withdrawn;
-
-                            const updateQtyMeta = (next: { returned?: number; withdrawn?: number }) => {
-                              const merged = mergeNotesWithQuantities(line.notes ?? null, {
-                                sold: line.quantity,
-                                returned: next.returned ?? returned,
-                                withdrawn: next.withdrawn ?? withdrawn,
-                              });
-                              updateLineField(invIdx, lineIdx, "notes", merged ?? "");
-                            };
-
-                            return (
-                          <tr
-                            key={lineIdx}
-                            className={
-                              line.matchedItemId ? "" : "bg-amber-50"
-                            }
-                          >
-                            <td className="p-2">{lineIdx + 1}</td>
-                            <td className="p-2">{line.itemCode}</td>
-                            <td className="p-2">{line.itemName}</td>
-                            <td className="p-2">
-                              {inv.editing || !line.matchedItemId ? (
-                                <select
-                                  className="w-full p-1 border rounded text-sm"
-                                  value={line.matchedItemId ?? ""}
-                                  onChange={(e) =>
-                                    updateLineField(
-                                      invIdx,
-                                      lineIdx,
-                                      "matchedItemId",
-                                      e.target.value || null
-                                    )
-                                  }
-                                >
-                                  <option value="">اختر الصنف</option>
-                                  {items?.map((it) => (
-                                    <option key={it.id} value={it.id}>
-                                      {it.item_code} - {it.item_name}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="text-green-700">
-                                  {line.matchedItemName}
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-2 text-end tabular-nums">
-                              {inv.editing ? (
-                                <Input
-                                  type="number"
-                                  step="0.001"
-                                  className="w-20 text-end"
-                                  value={line.quantity}
-                                  onChange={(e) =>
-                                    updateLineField(
-                                      invIdx,
-                                      lineIdx,
-                                      "quantity",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                />
-                              ) : (
-                                line.quantity.toFixed(3)
-                              )}
-                            </td>
-
-                            <td className="p-2 text-end tabular-nums">
-                              {inv.editing ? (
-                                <Input
-                                  type="number"
-                                  step="0.001"
-                                  className="w-20 text-end"
-                                  value={returned}
-                                  onChange={(e) => updateQtyMeta({ returned: parseFloat(e.target.value) || 0 })}
-                                />
-                              ) : (
-                                Number(returned || 0).toFixed(3)
-                              )}
-                            </td>
-
-                            <td className="p-2 text-end tabular-nums">
-                              {inv.editing ? (
-                                <Input
-                                  type="number"
-                                  step="0.001"
-                                  className="w-20 text-end"
-                                  value={withdrawn}
-                                  onChange={(e) => updateQtyMeta({ withdrawn: parseFloat(e.target.value) || 0 })}
-                                />
-                              ) : (
-                                Number(withdrawn || 0).toFixed(3)
-                              )}
-                            </td>
-
-                            <td className="p-2 text-end tabular-nums">
-                              {inv.editing ? (
-                                <Input
-                                  type="number"
-                                  step="0.001"
-                                  className="w-24 text-end"
-                                  value={line.unitPrice}
-                                  onChange={(e) =>
-                                    updateLineField(
-                                      invIdx,
-                                      lineIdx,
-                                      "unitPrice",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
-                                />
-                              ) : (
-                                line.unitPrice.toFixed(3)
-                              )}
-                            </td>
-                            <td className="p-2 text-end tabular-nums">
-                              {(line.quantity * line.unitPrice).toFixed(3)}
-                            </td>
-                            <td className="p-2">
-                              {inv.editing && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => removeLine(invIdx, lineIdx)}
-                                  disabled={inv.lines.length <= 1}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              )}
-                            </td>
-                          </tr>
-                            );
-                          })()
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {inv.editing && (
-                    <div className="mt-3">
-                      <Button type="button" variant="outline" onClick={() => addLine(invIdx)}>
-                        <Plus className="h-4 w-4 ml-2" />
-                        إضافة سطر
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Summary */}
-                  <div className="flex justify-between items-center mt-4 pt-2 border-t">
-                    <span className="text-sm text-muted-foreground">
-                      عدد الأصناف: {lineCount}
-                    </span>
-                    <span className="font-bold">الإجمالي: {grandTotal} د.ك</span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {previews.map((inv, invIdx) => (
+            <InvoicePreviewCard
+              key={invIdx}
+              inv={inv}
+              invIdx={invIdx}
+              items={items}
+              customers={customers}
+              updateInvoiceField={updateInvoiceField}
+              updateLineField={updateLineField}
+              removeInvoice={removeInvoice}
+              removeLine={removeLine}
+              addLine={addLine}
+            />
+          ))}
         </div>
       )}
     </div>
