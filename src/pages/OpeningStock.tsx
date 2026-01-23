@@ -65,6 +65,9 @@ const OpeningStock = () => {
   // يُحفظ هذا التاريخ في opening_stock.entry_date لكل الأصناف عند الحفظ.
   const [entryDate, setEntryDate] = useState<string>(DEFAULT_OPENING_STOCK_ENTRY_DATE);
 
+  // فلتر عرض الرصيد الافتتاحي الحالي حسب التاريخ
+  const [filterEntryDate, setFilterEntryDate] = useState<string>("");
+
   const [matcherOpen, setMatcherOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activePickLineId, setActivePickLineId] = useState<string | null>(null);
@@ -284,13 +287,18 @@ const OpeningStock = () => {
     }
   });
 
+  const filteredExistingStock = useMemo(() => {
+    if (!filterEntryDate) return existingStock ?? [];
+    return (existingStock ?? []).filter((s: any) => String(s?.entry_date ?? "") === filterEntryDate);
+  }, [existingStock, filterEntryDate]);
+
   const existingTotals = useMemo(() => {
-    const actual = (existingStock ?? []).reduce((sum: number, s: any) => {
+    const actual = (filteredExistingStock ?? []).reduce((sum: number, s: any) => {
       const v = Number(s?.total_value ?? 0);
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0);
 
-    const expected = (existingStock ?? []).reduce((sum: number, s: any) => {
+    const expected = (filteredExistingStock ?? []).reduce((sum: number, s: any) => {
       const qty = Number(s?.quantity ?? 0);
       const sp = Number(s?.items_master?.selling_price ?? 0);
       if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
@@ -298,7 +306,7 @@ const OpeningStock = () => {
     }, 0);
 
     return { actual, expected };
-  }, [existingStock]);
+  }, [filteredExistingStock]);
 
   const saveMutation = useMutation({
     mutationFn: async (lines: OpeningStockLine[]) => {
@@ -632,7 +640,25 @@ const OpeningStock = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>الرصيد الافتتاحي الحالي</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>الرصيد الافتتاحي الحالي</CardTitle>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">فلتر التاريخ</label>
+                <Input
+                  type="date"
+                  value={filterEntryDate}
+                  onChange={(e) => setFilterEntryDate(e.target.value)}
+                  className="w-[160px]"
+                />
+                {filterEntryDate && (
+                  <Button type="button" variant="outline" onClick={() => setFilterEntryDate("")}
+                  >
+                    إلغاء الفلتر
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -640,6 +666,7 @@ const OpeningStock = () => {
                 <thead>
                   <tr className="border-b">
                     <th className="text-right p-2">م</th>
+                    <th className="text-right p-2">تاريخ الرصيد</th>
                     <th className="text-right p-2">كود العنصر</th>
                     <th className="text-right p-2">اسم العنصر</th>
                     <th className="text-right p-2">التصنيف</th>
@@ -650,9 +677,10 @@ const OpeningStock = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {existingStock?.map((stock: any, idx: number) => (
+                  {filteredExistingStock?.map((stock: any, idx: number) => (
                     <tr key={stock.id} className="border-b hover:bg-slate-50">
                       <td className="p-2 tabular-nums">{idx + 1}</td>
+                      <td className="p-2 tabular-nums">{String(stock.entry_date ?? "")}</td>
                       <td className="p-2">{stock.items_master.item_code}</td>
                       <td className="p-2">{stock.items_master.item_name}</td>
                       <td className="p-2">{stock.items_master.category}</td>
@@ -673,7 +701,7 @@ const OpeningStock = () => {
                 </tbody>
                 <tfoot>
                   <tr className="border-t bg-muted/30">
-                    <td className="p-2" colSpan={6}>
+                    <td className="p-2" colSpan={7}>
                       <div className="text-sm font-medium">الإجمالي</div>
                     </td>
                     <td className="p-2 font-semibold tabular-nums" colSpan={2}>
