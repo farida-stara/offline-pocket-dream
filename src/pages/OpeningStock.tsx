@@ -32,7 +32,7 @@ const LAST_IMPORT_STORAGE_KEY = "opening_stock:last_import:v1";
 const MAX_CACHED_FILE_BYTES = 4_500_000; // ~4.5MB to avoid localStorage quota issues
 
 // تاريخ الرصيد الافتتاحي المعتمد في النظام
-const OPENING_STOCK_ENTRY_DATE = "2025-01-18";
+const DEFAULT_OPENING_STOCK_ENTRY_DATE = "2025-01-18";
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -60,6 +60,10 @@ const OpeningStock = () => {
   const [lines, setLines] = useState<OpeningStockLine[]>([
     { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_cost: 0 }
   ]);
+
+  // السماح بتحديد تاريخ الرصيد الافتتاحي بدل التاريخ الثابت.
+  // يُحفظ هذا التاريخ في opening_stock.entry_date لكل الأصناف عند الحفظ.
+  const [entryDate, setEntryDate] = useState<string>(DEFAULT_OPENING_STOCK_ENTRY_DATE);
 
   const [matcherOpen, setMatcherOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -366,14 +370,14 @@ const OpeningStock = () => {
               item_id: key,
               quantity: l.quantity,
               unit_cost: l.unit_cost,
-              entry_date: OPENING_STOCK_ENTRY_DATE,
+              entry_date: entryDate,
             });
           } else {
             mergedByItem.set(key, {
               item_id: key,
               quantity: prev.quantity + l.quantity,
               unit_cost: l.unit_cost || prev.unit_cost,
-              entry_date: OPENING_STOCK_ENTRY_DATE,
+              entry_date: entryDate,
             });
           }
         }
@@ -408,14 +412,14 @@ const OpeningStock = () => {
             item_id: key,
             quantity: l.quantity,
             unit_cost: l.unit_cost,
-            entry_date: OPENING_STOCK_ENTRY_DATE,
+            entry_date: entryDate,
           });
         } else {
           mergedByItem.set(key, {
             item_id: key,
             quantity: prev.quantity + l.quantity,
             unit_cost: l.unit_cost || prev.unit_cost,
-            entry_date: OPENING_STOCK_ENTRY_DATE,
+            entry_date: entryDate,
           });
         }
       }
@@ -474,7 +478,7 @@ const OpeningStock = () => {
     e?.preventDefault();
     e?.stopPropagation();
 
-    console.log("[OpeningStock] Save clicked", { linesCount: lines.length });
+    console.log("[OpeningStock] Save clicked", { linesCount: lines.length, entryDate });
     toast.message(`بدء الحفظ… (${lines.length} سطر)`);
     saveMutation.mutate(lines);
   };
@@ -494,6 +498,15 @@ const OpeningStock = () => {
             <div className="flex items-center justify-between gap-3">
               <CardTitle>إدخال الرصيد الافتتاحي</CardTitle>
               <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-muted-foreground whitespace-nowrap">تاريخ الرصيد</label>
+                  <Input
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="w-[160px]"
+                  />
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
