@@ -27,7 +27,14 @@ import { ArrowRight, Search, Plus, Eye, Trash2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadInvoicesPdf } from "@/lib/invoicePdf";
+import { downloadInvoicesPdf, downloadSingleInvoicePdf } from "@/lib/invoicePdf";
+import { getDisplayQuantities } from "@/lib/salesLineQuantities";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const SalesList = () => {
   const navigate = useNavigate();
@@ -88,7 +95,7 @@ const SalesList = () => {
   });
 
   const exportPdfMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ mode }: { mode: "full" | "short" }) => {
       let q = supabase
         .from("sales_headers")
         .select(
@@ -113,7 +120,7 @@ const SalesList = () => {
         .from("sales_lines")
         .select(
           `
-          sales_header_id, quantity, unit_price, line_total,
+          sales_header_id, quantity, unit_price, line_total, notes,
           item:items_master(item_name, item_code, selling_price)
         `,
         )
@@ -128,12 +135,21 @@ const SalesList = () => {
       });
 
       const invoices = headers.map((h: any) => {
-        const lns = byHeader.get(h.id) ?? [];
+        const rawLines = byHeader.get(h.id) ?? [];
+        const lns =
+          mode === "short"
+            ? rawLines.filter((l: any) => {
+                const q = getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null });
+                return Number(q.sold ?? 0) !== 0;
+              })
+            : rawLines;
+
         const expectedSellingTotal = lns.reduce((sum: number, l: any) => {
-          const qty = Number(l.quantity ?? 0);
+          const q = getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null });
+          const soldQty = Number(q.sold ?? 0);
           const sp = Number(l.item?.selling_price ?? 0);
-          if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
-          return sum + qty * sp;
+          if (!Number.isFinite(soldQty) || !Number.isFinite(sp)) return sum;
+          return sum + soldQty * sp;
         }, 0);
 
         return {
@@ -151,6 +167,7 @@ const SalesList = () => {
           lines: lns.map((l: any) => ({
             itemName: l.item?.item_name || l.item?.item_code || "-",
             qty: Number(l.quantity ?? 0),
+            quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
             unitPrice: Number(l.unit_price ?? 0),
             lineTotal: Number(l.line_total || Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)),
           })),
@@ -159,10 +176,67 @@ const SalesList = () => {
 
       const fromPart = dateFrom || "all";
       const toPart = dateTo || "all";
-      const fileName = `sales_${fromPart}_${toPart}.pdf`;
+      const fileName = `sales_${fromPart}_${toPart}_${mode === "short" ? "short" : "full"}.pdf`;
       await downloadInvoicesPdf(fileName, invoices);
     },
     onError: (e: any) => toast.error("تعذر إنشاء PDF: " + (e?.message || "خطأ غير معروف")),
+  });
+
+  const printOneMutation = useMutation({
+    mutationFn: async ({ id, mode }: { id: string; mode: "full" | "short" }) => {
+      const { data: header, error: headerError } = await supabase
+        .from("sales_headers")
+        .select(
+          `
+          id, invoice_no, invoice_date, total_amount, payment_method, notes,
+          customer:customers(customer_name)
+        `,
+        )
+        .eq("id", id)
+        .single();
+      if (headerError) throw headerError;
+
+      const { data: lines, error: linesError } = await supabase
+        .from("sales_lines")
+        .select(
+          `
+          quantity, unit_price, line_total, notes,
+          item:items_master(item_name, item_code)
+        `,
+        )
+        .eq("sales_header_id", id)
+        .order("line_no");
+      if (linesError) throw linesError;
+
+      const filtered =
+        mode === "short"
+          ? (lines ?? []).filter((l: any) => {
+              const q = getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null });
+              return Number(q.sold ?? 0) !== 0;
+            })
+          : (lines ?? []);
+
+      await downloadSingleInvoicePdf({
+        title: "فاتورة مبيعات",
+        invoiceNo: header.invoice_no,
+        date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+        partyLabel: "العميل",
+        partyName: header.customer?.customer_name || "مجهول",
+        paymentMethod: header.payment_method || "-",
+        notes: header.notes || "",
+        totals: {
+          totalAmount: Number(header.total_amount || 0),
+        },
+        lines: filtered.map((l: any) => ({
+          itemName: l.item?.item_name || l.item?.item_code || "-",
+          qty: Number(l.quantity ?? 0),
+          quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
+          unitPrice: Number(l.unit_price ?? 0),
+          lineTotal: Number(l.line_total || Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)),
+        })),
+      });
+    },
+    onError: (e: any) => toast.error("تعذر طباعة الفاتورة: " + (e?.message || "خطأ غير معروف")),
   });
 
   return (
@@ -181,15 +255,22 @@ const SalesList = () => {
             </h1>
           </div>
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => exportPdfMutation.mutate()}
-              disabled={exportPdfMutation.isPending}
-            >
-              <Printer className="h-4 w-4 ml-2" />
-              {exportPdfMutation.isPending ? "جاري تجهيز PDF..." : "تحميل PDF"}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" disabled={exportPdfMutation.isPending}>
+                  <Printer className="h-4 w-4 ml-2" />
+                  {exportPdfMutation.isPending ? "جاري تجهيز PDF..." : "تحميل PDF"}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => exportPdfMutation.mutate({ mode: "full" })}>
+                  تحميل PDF (كاملة)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportPdfMutation.mutate({ mode: "short" })}>
+                  تحميل PDF (مختصرة)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={() => navigate("/sales/new")}>
               <Plus className="h-4 w-4 ml-2" />
               فاتورة جديدة
@@ -312,6 +393,23 @@ const SalesList = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" title="طباعة PDF">
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem onClick={() => printOneMutation.mutate({ id: s.id, mode: "full" })}>
+                                طباعة PDF (كاملة)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => printOneMutation.mutate({ id: s.id, mode: "short" })}>
+                                طباعة PDF (مختصرة)
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+
                           <Button
                             variant="ghost"
                             size="icon"
