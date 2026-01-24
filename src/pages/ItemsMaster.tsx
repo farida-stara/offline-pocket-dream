@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,10 +15,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Search, Plus, Pencil, Trash2, Upload, RotateCcw } from "lucide-react";
+import { ArrowRight, Search, Plus, Pencil, Trash2, Upload, RotateCcw, Star } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { normalizeArabic } from "@/lib/fuzzy";
+import { buildItemSearchTokens, normalizeItemSearchTerm } from "@/lib/itemSearch";
 
 type LastImportCache = {
   name: string;
@@ -74,6 +75,29 @@ const ItemsMaster = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const FAVORITES_KEY = "items_master:favorites:v1";
+  const RECENT_KEY = "items_master:recent:v1";
+
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(FAVORITES_KEY);
+      const arr = raw ? (JSON.parse(raw) as string[]) : [];
+      return new Set(arr);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState<ItemFormData>(defaultFormData);
   const [isEditing, setIsEditing] = useState(false);
@@ -98,7 +122,14 @@ const ItemsMaster = () => {
         .order("item_name");
 
       if (search) {
-        query = query.or(`item_name.ilike.%${search}%,item_code.ilike.%${search}%`);
+        const tokens = buildItemSearchTokens(search);
+        const orParts: string[] = [];
+        for (const t of tokens) {
+          // note: ilike is case-insensitive and works well for partial matches
+          orParts.push(`item_name.ilike.%${t}%`);
+          orParts.push(`item_code.ilike.%${t}%`);
+        }
+        query = query.or(orParts.join(","));
       }
 
       const { data, error } = await query;
@@ -114,6 +145,59 @@ const ItemsMaster = () => {
   const existingNames = useMemo(() => {
     return new Set((items ?? []).map(i => normalizeArabic(i.item_name)));
   }, [items]);
+
+  const favoriteItems = useMemo(() => {
+    const map = new Map((items ?? []).map((it: any) => [it.id, it]));
+    return Array.from(favorites)
+      .map((id) => map.get(id))
+      .filter(Boolean)
+      .slice(0, 8);
+  }, [favorites, items]);
+
+  const recentItems = useMemo(() => {
+    const map = new Map((items ?? []).map((it: any) => [it.id, it]));
+    return (recentIds ?? [])
+      .map((id) => map.get(id))
+      .filter(Boolean)
+      .slice(0, 8);
+  }, [recentIds, items]);
+
+  const persistFavorites = (next: Set<string>) => {
+    setFavorites(next);
+    try {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(next)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleFavorite = (itemId: string) => {
+    const next = new Set(favorites);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    persistFavorites(next);
+  };
+
+  const pushRecent = (itemId: string) => {
+    const next = [itemId, ...(recentIds ?? []).filter((x) => x !== itemId)].slice(0, 20);
+    setRecentIds(next);
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: async (data: ItemFormData) => {
@@ -189,6 +273,7 @@ const ItemsMaster = () => {
   };
 
   const openEditDialog = (item: any) => {
+    pushRecent(item.id);
     setFormData({
       id: item.id,
       item_code: item.item_code || "",
@@ -397,12 +482,52 @@ const ItemsMaster = () => {
             <div className="relative max-w-md">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="بحث بالاسم أو الكود..."
+                placeholder="ابحث (جزء من الكود/الاسم) — Ctrl+K"
                 className="pr-10"
               />
             </div>
+
+            {(favoriteItems.length > 0 || recentItems.length > 0) && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {favoriteItems.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">مفضلة:</span>
+                    {favoriteItems.map((it: any) => (
+                      <Button
+                        key={it.id}
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSearch(it.item_code ?? "")}
+                        title={it.item_name}
+                      >
+                        {it.item_code}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                {recentItems.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">آخر استخدام:</span>
+                    {recentItems.map((it: any) => (
+                      <Button
+                        key={it.id}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSearch(it.item_code ?? "")}
+                        title={it.item_name}
+                      >
+                        {it.item_code}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -427,9 +552,36 @@ const ItemsMaster = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => (
-                      <TableRow key={item.id} className={!item.is_active ? "opacity-50" : ""}>
-                        <TableCell className="font-mono">{item.item_code}</TableCell>
+                      {items.map((item) => (
+                      <TableRow
+                        key={item.id}
+                        className={!item.is_active ? "opacity-50" : ""}
+                        onDoubleClick={() => openEditDialog(item)}
+                      >
+                        <TableCell className="font-mono">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(item.id);
+                              }}
+                              title={favorites.has(item.id) ? "إزالة من المفضلة" : "إضافة للمفضلة"}
+                            >
+                              <Star
+                                className={
+                                  "h-4 w-4 " +
+                                  (favorites.has(item.id)
+                                    ? "fill-primary text-primary"
+                                    : "text-muted-foreground")
+                                }
+                              />
+                            </Button>
+                            <span>{item.item_code}</span>
+                          </div>
+                        </TableCell>
                         <TableCell className="font-medium">{item.item_name}</TableCell>
                         <TableCell>{item.category || "-"}</TableCell>
                         <TableCell className="text-left tabular-nums">
