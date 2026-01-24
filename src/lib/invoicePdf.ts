@@ -120,19 +120,13 @@ async function ensureArabicFont() {
     // In Vite/ESM, pdfmake can exist behind multiple wrappers; we must set VFS on all of them.
     const builtin = await getBuiltinVfsAsync();
     const existing = pickAnyExistingVfs();
-    const baseVfs = Object.keys(existing).length ? existing : builtin;
-    if (!Object.keys(baseVfs).length) {
-      // Helpful diagnostics for stubborn environments
-      // eslint-disable-next-line no-console
-      console.warn("pdfmake VFS is empty", {
-        hasStaticFontsModule: Boolean(pdfFontsModule),
-        targets: getPdfMakeTargets().map((t) => ({
-          hasCreatePdf: typeof (t as any)?.createPdf === "function",
-          vfsKeys: t?.vfs ? Object.keys(t.vfs).length : 0,
-        })),
-      });
-      throw new Error("تعذر تهيئة نظام خطوط PDF");
-    }
+    // IMPORTANT: Some builds return an empty builtin VFS (Vite/ESM wrapping).
+    // We do NOT need the builtin fonts at all as long as we register Amiri into VFS.
+    const baseVfs = Object.keys(existing).length
+      ? existing
+      : Object.keys(builtin).length
+        ? builtin
+        : {};
     setPdfMakeVfs(baseVfs);
 
     // Load font from public/ (works with non-root BASE_URL too)
@@ -143,7 +137,7 @@ async function ensureArabicFont() {
     const base64 = arrayBufferToBase64(buf);
 
     // Add to VFS + register font family
-    // Merge into the *current* VFS (already set above), then re-apply to all targets.
+    // We can start from an empty VFS; only Amiri is required for our PDFs.
     const current = pickAnyExistingVfs();
     const mergedVfs: Record<string, string> = {
       ...(Object.keys(current).length ? current : baseVfs),
