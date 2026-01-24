@@ -42,6 +42,28 @@ function getBuiltinVfs(): Record<string, string> {
   );
 }
 
+async function getBuiltinVfsAsync(): Promise<Record<string, string>> {
+  const direct = getBuiltinVfs();
+  if (Object.keys(direct).length) return direct;
+
+  // Vite/ESM can sometimes wrap/optimize CommonJS in a way that makes the static import
+  // appear empty at runtime. A dynamic import often yields the correct shape.
+  try {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    const dyn: any = await import("pdfmake/build/vfs_fonts");
+    return (
+      dyn?.pdfMake?.vfs ||
+      dyn?.default?.pdfMake?.vfs ||
+      dyn?.vfs ||
+      dyn?.default?.vfs ||
+      {}
+    );
+  } catch {
+    return {};
+  }
+}
+
 function pickAnyExistingVfs(): Record<string, string> {
   for (const t of getPdfMakeTargets()) {
     const v = t?.vfs;
@@ -96,16 +118,26 @@ async function ensureArabicFont() {
   arabicFontReady = (async () => {
     // Always start from a known-good VFS.
     // In Vite/ESM, pdfmake can exist behind multiple wrappers; we must set VFS on all of them.
-    const builtin = getBuiltinVfs();
+    const builtin = await getBuiltinVfsAsync();
     const existing = pickAnyExistingVfs();
     const baseVfs = Object.keys(existing).length ? existing : builtin;
     if (!Object.keys(baseVfs).length) {
+      // Helpful diagnostics for stubborn environments
+      // eslint-disable-next-line no-console
+      console.warn("pdfmake VFS is empty", {
+        hasStaticFontsModule: Boolean(pdfFontsModule),
+        targets: getPdfMakeTargets().map((t) => ({
+          hasCreatePdf: typeof (t as any)?.createPdf === "function",
+          vfsKeys: t?.vfs ? Object.keys(t.vfs).length : 0,
+        })),
+      });
       throw new Error("تعذر تهيئة نظام خطوط PDF");
     }
     setPdfMakeVfs(baseVfs);
 
-    // Load font from public/ (so it works in preview + published)
-    const res = await fetch("/fonts/Amiri-Regular.ttf");
+    // Load font from public/ (works with non-root BASE_URL too)
+    const fontUrl = `${import.meta.env.BASE_URL}fonts/Amiri-Regular.ttf`;
+    const res = await fetch(fontUrl);
     if (!res.ok) throw new Error("تعذر تحميل خط الطباعة العربي");
     const buf = await res.arrayBuffer();
     const base64 = arrayBufferToBase64(buf);
