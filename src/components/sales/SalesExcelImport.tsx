@@ -13,6 +13,7 @@ import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
 import { getDisplayQuantities, mergeNotesWithQuantities } from "@/lib/salesLineQuantities";
 import { useNavigate } from "react-router-dom";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
+import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
 
 const LAST_IMPORT_STORAGE_KEY = "sales_invoices:last_import:v1";
 const MAX_CACHED_FILE_BYTES = 4_500_000;
@@ -81,6 +82,9 @@ const InvoicePreviewCard = ({
   addLine,
 }: InvoiceCardProps) => {
   const navigate = useNavigate();
+
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
   const hasUnmatched = inv.lines.some((l) => !l.matchedItemId);
   const lineCount = inv.lines.length;
   const grandTotal = inv.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0).toFixed(3);
@@ -124,6 +128,13 @@ const InvoicePreviewCard = ({
         </div>
       </CardHeader>
       <CardContent>
+        <StockBalanceBreakdownDialog
+          open={breakdownOpen}
+          onOpenChange={setBreakdownOpen}
+          itemId={breakdownItemId}
+          invoiceDate={inv.invoiceDate}
+        />
+
         {inv.editing ? (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div>
@@ -326,7 +337,18 @@ const InvoicePreviewCard = ({
                          }
                          title="الرصيد = افتتاحي + مشتريات - مبيعات - توالف (ضمن الفترة)"
                        >
-                         {stockBalance.toFixed(3)}
+                         <button
+                           type="button"
+                           className="underline underline-offset-4"
+                           title="عرض مصدر حساب رصيد المخزن"
+                           onClick={() => {
+                             setBreakdownItemId(line.matchedItemId);
+                             setBreakdownOpen(true);
+                           }}
+                           disabled={!line.matchedItemId}
+                         >
+                           {stockBalance.toFixed(3)}
+                         </button>
                        </td>
 
                        <td className="p-2 text-end tabular-nums bg-amber-50">

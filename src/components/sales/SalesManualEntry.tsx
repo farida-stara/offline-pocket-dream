@@ -11,6 +11,7 @@ import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
+import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
 
 interface SalesLine {
   id: string;
@@ -38,6 +39,9 @@ const SalesManualEntry = () => {
   const [newCustomerCode, setNewCustomerCode] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
+
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
   const [lines, setLines] = useState<SalesLine[]>([
     { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 },
   ]);
@@ -237,6 +241,13 @@ const SalesManualEntry = () => {
 
   return (
     <>
+    <StockBalanceBreakdownDialog
+      open={breakdownOpen}
+      onOpenChange={setBreakdownOpen}
+      itemId={breakdownItemId}
+      invoiceDate={invoiceDate}
+    />
+
     <Card>
       <CardHeader>
         <CardTitle>إدخال فاتورة مبيعات يدوياً</CardTitle>
@@ -439,15 +450,25 @@ const SalesManualEntry = () => {
                       {(line.quantity * line.unit_price).toFixed(3)}
                     </td>
 
-                    <td
-                      className={
-                        "p-2 text-end tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
-                        (stockWarn ? "ring-1 ring-amber-400" : "")
-                      }
-                      title="الرصيد = افتتاحي + مشتريات - مبيعات - توالف (ضمن الفترة)"
-                    >
-                      {stockBalance.toFixed(3)}
-                    </td>
+                     <td
+                       className={
+                         "p-2 text-end tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
+                         (stockWarn ? "ring-1 ring-amber-400" : "")
+                       }
+                       title="الرصيد = افتتاحي + مشتريات - مبيعات - توالف (ضمن الفترة)"
+                     >
+                       <button
+                         type="button"
+                         className="underline underline-offset-4"
+                         title="عرض مصدر حساب رصيد المخزن"
+                         onClick={() => {
+                           setBreakdownItemId(line.item_id);
+                           setBreakdownOpen(true);
+                         }}
+                       >
+                         {stockBalance.toFixed(3)}
+                       </button>
+                     </td>
 
                     <td className="p-2 text-end tabular-nums bg-amber-50">
                       {purchaseHeaderId ? (
