@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -99,6 +100,19 @@ const SalesDetails = () => {
       const { data, error } = await supabase.from("customers").select("id,customer_code,customer_name").eq("is_active", true).order("customer_name");
       if (error) throw error;
       return data;
+    },
+  });
+
+  const { data: salesReps } = useQuery({
+    queryKey: ["sales-reps"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales_reps")
+        .select("id, rep_name")
+        .eq("is_active", true)
+        .order("rep_name");
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -486,6 +500,44 @@ const SalesDetails = () => {
                   </select>
                 ) : (
                   <p className="font-semibold">{header.payment_method || "-"}</p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">مندوب المبيعات</p>
+                {editing ? (
+                  <select
+                    className="w-full p-2 border rounded-md"
+                    value={editHeader?.sales_rep_id ?? ""}
+                    onChange={(e) => setEditHeader((h: any) => ({ ...h, sales_rep_id: e.target.value || null }))}
+                  >
+                    <option value="">بدون</option>
+                    {(salesReps ?? []).map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.rep_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="font-semibold">{header.sales_rep?.rep_name || "-"}</p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">التحصيل</p>
+                {editing ? (
+                  <div className="flex items-center gap-2 pt-2">
+                    <Checkbox
+                      id="rep_collects"
+                      checked={Boolean(editHeader?.rep_collects)}
+                      onCheckedChange={(v) => setEditHeader((h: any) => ({ ...h, rep_collects: Boolean(v) }))}
+                    />
+                    <label htmlFor="rep_collects" className="text-sm font-medium">
+                      المندوب مسؤول عن التحصيل
+                    </label>
+                  </div>
+                ) : (
+                  <p className="font-semibold">{header.rep_collects ? "نعم" : "لا"}</p>
                 )}
               </div>
               <div className="col-span-2 md:col-span-4">

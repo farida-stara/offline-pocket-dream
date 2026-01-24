@@ -86,6 +86,10 @@ function setPdfMakeFonts(nextFonts: any) {
   }
 }
 
+function getPdfMakeInstance(): any {
+  return getPdfMakeTargets().find((t) => typeof t?.createPdf === "function") || (pdfMake as any);
+}
+
 async function ensureArabicFont() {
   if (arabicFontReady) return arabicFontReady;
 
@@ -285,7 +289,8 @@ export async function getSingleInvoicePdf(inv: PdfInvoice) {
     },
   };
 
-  return pdfMake.createPdf(docDefinition as any);
+  const pm = getPdfMakeInstance();
+  return pm.createPdf(docDefinition as any);
 }
 
 export async function downloadInvoicesPdf(fileName: string, invoices: PdfInvoice[]) {
@@ -316,5 +321,6 @@ export async function downloadInvoicesPdf(fileName: string, invoices: PdfInvoice
     },
   };
 
-  pdfMake.createPdf(docDefinition as any).download(fileName);
+  const pm = getPdfMakeInstance();
+  pm.createPdf(docDefinition as any).download(fileName);
 }
