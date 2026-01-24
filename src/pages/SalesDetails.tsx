@@ -39,6 +39,7 @@ const SalesDetails = () => {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
+  const [viewMode, setViewMode] = useState<"full" | "short">("full");
 
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
@@ -258,6 +259,15 @@ const SalesDetails = () => {
 
   const { header, lines } = sale;
 
+  const filteredLines = useMemo(() => {
+    if (editing) return lines ?? [];
+    if (viewMode === "full") return lines ?? [];
+    return (lines ?? []).filter((line: any) => {
+      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+      return Number(q.sold ?? 0) !== 0;
+    });
+  }, [editing, lines, viewMode]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
       <div className="max-w-5xl mx-auto">
@@ -279,6 +289,20 @@ const SalesDetails = () => {
               <>
                 <Button
                   type="button"
+                  variant={viewMode === "full" ? "default" : "outline"}
+                  onClick={() => setViewMode("full")}
+                >
+                  عرض كامل
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === "short" ? "default" : "outline"}
+                  onClick={() => setViewMode("short")}
+                >
+                  عرض مختصر
+                </Button>
+                <Button
+                  type="button"
                   variant="outline"
                   onClick={() =>
                     downloadSingleInvoicePdf({
@@ -293,7 +317,7 @@ const SalesDetails = () => {
                         totalAmount: Number(header.total_amount || 0),
                         expectedSellingTotal: Number(expectedSellingTotal || 0),
                       },
-                      lines: (lines ?? []).map((l: any) => ({
+                      lines: (filteredLines ?? []).map((l: any) => ({
                         itemName: l.item?.item_name || l.item?.item_code || "-",
                         qty: Number(l.quantity || 0),
                         quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
@@ -303,7 +327,7 @@ const SalesDetails = () => {
                     })
                   }
                 >
-                  تحميل PDF
+                  تحميل PDF {viewMode === "short" ? "(مختصرة)" : "(كاملة)"}
                 </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
@@ -442,7 +466,7 @@ const SalesDetails = () => {
                 </TableHeader>
                 <TableBody>
                   {!editing
-                      ? lines.map((line: any) => {
+                      ? filteredLines.map((line: any) => {
                           const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
                           const sp = stockPricingMap?.[line.item_id];
                           const stockBalance = Number(sp?.stockBalance ?? 0);
