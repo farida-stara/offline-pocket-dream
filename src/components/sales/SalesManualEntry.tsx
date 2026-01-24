@@ -157,21 +157,29 @@ const SalesManualEntry = () => {
           item_id: line.item_id,
           quantity: line.quantity,
           unit_price: line.unit_price,
-          line_total: line.quantity * line.unit_price,
         }))
       );
 
       if (linesError) throw linesError;
 
-      await supabase.from("invoice_register").insert({
+      const { error: regError } = await supabase.from("invoice_register").insert({
         invoice_no: normalizedNo,
         invoice_type: "SALES",
       });
+
+      // IMPORTANT: invoice_register enforces the real uniqueness.
+      // If it fails (e.g. duplicate), rollback the header/lines so we don't keep a "ghost" invoice.
+      if (regError) {
+        await supabase.from("sales_lines").delete().eq("sales_header_id", header.id);
+        await supabase.from("sales_headers").delete().eq("id", header.id);
+        throw regError;
+      }
     },
     onSuccess: () => {
       toast.success("تم حفظ فاتورة المبيعات بنجاح");
-      queryClient.invalidateQueries({ queryKey: ["sales"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-list"] });
       resetForm();
+      navigate("/sales");
     },
     onError: (error: any) => {
       toast.error("خطأ في الحفظ: " + error.message);
