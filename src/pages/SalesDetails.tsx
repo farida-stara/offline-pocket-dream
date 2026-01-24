@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
 import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
+import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 
 const SalesDetails = () => {
   const navigate = useNavigate();
@@ -102,6 +103,13 @@ const SalesDetails = () => {
     }, 0);
   }, [sale]);
 
+  const itemIdsForInvoice = useMemo(() => (sale?.lines ?? []).map((l: any) => l.item_id).filter(Boolean), [sale?.lines]);
+  const { data: stockPricingMap } = useSalesStockPricing({
+    itemIds: itemIdsForInvoice,
+    invoiceDate: sale?.header?.invoice_date,
+    excludeSalesHeaderId: id,
+  });
+
   const [editHeader, setEditHeader] = useState<any>(null);
   const [editLines, setEditLines] = useState<any[]>([]);
 
@@ -139,14 +147,7 @@ const SalesDetails = () => {
 
   const editTotals = useMemo(() => {
     const actual = editLines.reduce((sum, l) => sum + Number(l.quantity ?? 0) * Number(l.unit_price ?? 0), 0);
-    const expected = editLines.reduce((sum, l) => {
-      const it = (items ?? []).find((x: any) => x.id === l.item_id);
-      const sp = Number((it as any)?.selling_price ?? 0);
-      const qty = Number(l.quantity ?? 0);
-      if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
-      return sum + qty * sp;
-    }, 0);
-    return { actual, expected };
+    return { actual };
   }, [editLines, items]);
 
   const saveEditMutation = useMutation({
@@ -396,6 +397,12 @@ const SalesDetails = () => {
                       <TableHead className="text-center">الكمية المسحوبة</TableHead>
                     <TableHead className="text-left">سعر الوحدة</TableHead>
                     <TableHead className="text-left">الإجمالي</TableHead>
+                    <TableHead className="text-center border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</TableHead>
+                    <TableHead className="text-center bg-amber-50">سعر الوحدة-شراء</TableHead>
+                    <TableHead className="text-center bg-amber-50">هامش</TableHead>
+                    <TableHead className="text-center bg-amber-50">سعر البيع المتوقع للوحدة</TableHead>
+                    <TableHead className="text-center bg-amber-50">إجمالي سعر البيع المتوقع</TableHead>
+                    <TableHead className="text-center border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</TableHead>
                     {editing && <TableHead className="w-12"></TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -403,6 +410,18 @@ const SalesDetails = () => {
                   {!editing
                       ? lines.map((line: any) => {
                           const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+                          const sp = stockPricingMap?.[line.item_id];
+                          const stockBalance = Number(sp?.stockBalance ?? 0);
+                          const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+                          const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+                          const expectedUnit = purchaseUnit * margin;
+                          const soldQty = Number(q.sold ?? 0);
+                          const actualLineTotal = Number(line.line_total || soldQty * Number(line.unit_price || 0));
+                          const expectedLineTotal = soldQty * expectedUnit;
+                          const diff = expectedLineTotal - actualLineTotal;
+                          const stockWarn = soldQty > stockBalance;
+                          const diffWarn = diff < 0;
+
                           return (
                         <TableRow key={line.id}>
                           <TableCell className="text-muted-foreground">{line.line_no}</TableCell>
@@ -415,6 +434,39 @@ const SalesDetails = () => {
                           <TableCell className="text-left tabular-nums font-semibold">
                             {Number(line.line_total || line.quantity * line.unit_price).toFixed(3)}
                           </TableCell>
+                           <TableCell
+                             className={
+                               "text-center tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
+                               (stockWarn ? "ring-1 ring-amber-400" : "")
+                             }
+                           >
+                             {stockBalance.toFixed(3)}
+                           </TableCell>
+                           <TableCell className="text-center tabular-nums bg-amber-50">
+                             {sp?.lastPurchaseHeaderId ? (
+                               <button
+                                 type="button"
+                                 className="underline underline-offset-4"
+                                 title={`فتح آخر فاتورة شراء: ${sp?.lastPurchaseInvoiceNo ?? ""}`}
+                                 onClick={() => navigate(`/purchases/${sp.lastPurchaseHeaderId}`)}
+                               >
+                                 {purchaseUnit.toFixed(3)}
+                               </button>
+                             ) : (
+                               purchaseUnit.toFixed(3)
+                             )}
+                           </TableCell>
+                           <TableCell className="text-center tabular-nums bg-amber-50">{margin.toFixed(3)}</TableCell>
+                           <TableCell className="text-center tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</TableCell>
+                           <TableCell className="text-center tabular-nums bg-amber-50">{expectedLineTotal.toFixed(3)}</TableCell>
+                           <TableCell
+                             className={
+                               "text-center tabular-nums border-e-2 border-amber-400 bg-amber-50 " +
+                               (diffWarn ? "text-destructive font-semibold" : "")
+                             }
+                           >
+                             {diff.toFixed(3)}
+                           </TableCell>
                         </TableRow>
                           );
                         })
@@ -461,6 +513,56 @@ const SalesDetails = () => {
                           <TableCell className="text-left tabular-nums font-semibold">
                             {(Number(line.quantity || 0) * Number(line.unit_price || 0)).toFixed(3)}
                           </TableCell>
+                          {(() => {
+                            const sp = stockPricingMap?.[line.item_id];
+                            const stockBalance = Number(sp?.stockBalance ?? 0);
+                            const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+                            const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+                            const expectedUnit = purchaseUnit * margin;
+                            const soldQty = Number(line.quantity ?? 0);
+                            const actualLineTotal = soldQty * Number(line.unit_price ?? 0);
+                            const expectedLineTotal = soldQty * expectedUnit;
+                            const diff = expectedLineTotal - actualLineTotal;
+                            const stockWarn = soldQty > stockBalance;
+                            const diffWarn = diff < 0;
+                            return (
+                              <>
+                                <TableCell
+                                  className={
+                                    "text-center tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
+                                    (stockWarn ? "ring-1 ring-amber-400" : "")
+                                  }
+                                >
+                                  {stockBalance.toFixed(3)}
+                                </TableCell>
+                                <TableCell className="text-center tabular-nums bg-amber-50">
+                                  {sp?.lastPurchaseHeaderId ? (
+                                    <button
+                                      type="button"
+                                      className="underline underline-offset-4"
+                                      title={`فتح آخر فاتورة شراء: ${sp?.lastPurchaseInvoiceNo ?? ""}`}
+                                      onClick={() => navigate(`/purchases/${sp.lastPurchaseHeaderId}`)}
+                                    >
+                                      {purchaseUnit.toFixed(3)}
+                                    </button>
+                                  ) : (
+                                    purchaseUnit.toFixed(3)
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-center tabular-nums bg-amber-50">{margin.toFixed(3)}</TableCell>
+                                <TableCell className="text-center tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</TableCell>
+                                <TableCell className="text-center tabular-nums bg-amber-50">{expectedLineTotal.toFixed(3)}</TableCell>
+                                <TableCell
+                                  className={
+                                    "text-center tabular-nums border-e-2 border-amber-400 bg-amber-50 " +
+                                    (diffWarn ? "text-destructive font-semibold" : "")
+                                  }
+                                >
+                                  {diff.toFixed(3)}
+                                </TableCell>
+                              </>
+                            );
+                          })()}
                           <TableCell>
                             <Button
                               type="button"
@@ -501,12 +603,6 @@ const SalesDetails = () => {
                 <span className="text-lg font-semibold">الإجمالي:</span>
                 <span className="text-xl font-bold tabular-nums">
                   {Number((editing ? editTotals.actual : header.total_amount) || 0).toFixed(3)} د.ك
-                </span>
-              </div>
-              <div className="mt-2 flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">البيع المتوقع:</span>
-                <span className="text-sm font-semibold tabular-nums">
-                  {Number((editing ? editTotals.expected : expectedTotal) || 0).toFixed(3)} د.ك
                 </span>
               </div>
             </CardContent>
