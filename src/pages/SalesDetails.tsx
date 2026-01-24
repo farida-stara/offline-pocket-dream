@@ -114,6 +114,26 @@ const SalesDetails = () => {
     excludeSalesHeaderId: id,
   });
 
+  const expectedSellingTotal = useMemo(() => {
+    if (!sale) return 0;
+    return (sale.lines ?? []).reduce((sum: number, line: any) => {
+      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+      const soldQty = Number(q.sold ?? 0);
+      const sp = stockPricingMap?.[line.item_id];
+      const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+      const expectedUnit = purchaseUnit * margin;
+      if (!Number.isFinite(soldQty) || !Number.isFinite(expectedUnit)) return sum;
+      return sum + soldQty * expectedUnit;
+    }, 0);
+  }, [sale, stockPricingMap]);
+
+  const expectedDiff = useMemo(() => {
+    if (!sale) return 0;
+    const actual = Number(sale.header?.total_amount ?? 0);
+    return Number(expectedSellingTotal) - actual;
+  }, [sale, expectedSellingTotal]);
+
   const [editHeader, setEditHeader] = useState<any>(null);
   const [editLines, setEditLines] = useState<any[]>([]);
 
@@ -270,7 +290,7 @@ const SalesDetails = () => {
                       notes: header.notes || "",
                       totals: {
                         totalAmount: Number(header.total_amount || 0),
-                        expectedSellingTotal: Number(expectedTotal || 0),
+                        expectedSellingTotal: Number(expectedSellingTotal || 0),
                       },
                       lines: (lines ?? []).map((l: any) => ({
                         itemName: l.item?.item_name || l.item?.item_code || "-",
@@ -620,13 +640,35 @@ const SalesDetails = () => {
         )}
 
         <div className="mt-6 flex justify-end">
-          <Card className="w-64">
+          <Card className="w-80">
             <CardContent className="p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold">الإجمالي:</span>
-                <span className="text-xl font-bold tabular-nums">
-                  {Number((editing ? editTotals.actual : header.total_amount) || 0).toFixed(3)} د.ك
-                </span>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold">الإجمالي:</span>
+                  <span className="text-xl font-bold tabular-nums">
+                    {Number((editing ? editTotals.actual : header.total_amount) || 0).toFixed(3)} د.ك
+                  </span>
+                </div>
+
+                {!editing && (
+                  <>
+                    <div className="flex justify-between items-center text-sm text-muted-foreground">
+                      <span>إجمالي سعر البيع المتوقع:</span>
+                      <span className="tabular-nums">{Number(expectedSellingTotal || 0).toFixed(3)} د.ك</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm text-muted-foreground">
+                      <span>الفرق (المتوقع - الإجمالي):</span>
+                      <span className="tabular-nums">{Number(expectedDiff || 0).toFixed(3)} د.ك</span>
+                    </div>
+                  </>
+                )}
+
+                {!editing && header.notes?.trim() && (
+                  <div className="pt-2 border-t text-sm">
+                    <span className="font-semibold">ملاحظة: </span>
+                    <span>{header.notes}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

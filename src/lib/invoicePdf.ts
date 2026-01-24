@@ -160,8 +160,13 @@ function invoiceToContent(inv: PdfInvoice) {
     { text: `الإجمالي: ${money(inv.totals.totalAmount, currency)}`, style: "totals" },
   ];
   if (typeof inv.totals.expectedSellingTotal === "number") {
+    const diff = Number(inv.totals.expectedSellingTotal) - Number(inv.totals.totalAmount);
     totalsRight.push({
       text: `البيع المتوقع: ${money(inv.totals.expectedSellingTotal, currency)}`,
+      style: "totalsMuted",
+    });
+    totalsRight.push({
+      text: `الفرق (المتوقع - الإجمالي): ${money(diff, currency)}`,
       style: "totalsMuted",
     });
   }

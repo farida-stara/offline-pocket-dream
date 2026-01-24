@@ -243,6 +243,26 @@ const SalesManualEntry = () => {
       .toFixed(3);
   };
 
+  const expectedSellingTotal = useMemo(() => {
+    return lines.reduce((sum, line) => {
+      if (!line.item_id) return sum;
+      const sp = stockPricingMap?.[line.item_id];
+      const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+      const manualMargin = Number(line.margin_factor);
+      const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
+      const expectedUnit = purchaseUnit * usedMargin;
+      const qty = Number(line.quantity ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(expectedUnit)) return sum;
+      return sum + qty * expectedUnit;
+    }, 0);
+  }, [lines, stockPricingMap]);
+
+  const expectedDiff = useMemo(() => {
+    const actual = Number(calculateTotal());
+    return Number(expectedSellingTotal) - actual;
+  }, [expectedSellingTotal, lines]);
+
   const lineCount = lines.filter((l) => l.item_id && l.quantity > 0).length;
 
   return (
@@ -552,6 +572,18 @@ const SalesManualEntry = () => {
                 عدد الأصناف: {lineCount}
               </div>
               <div className="text-xl font-bold">الإجمالي: {calculateTotal()} د.ك</div>
+              <div className="text-sm text-muted-foreground">
+                إجمالي سعر البيع المتوقع: {expectedSellingTotal.toFixed(3)} د.ك
+              </div>
+              <div className="text-sm text-muted-foreground">
+                الفرق (المتوقع - الإجمالي): {expectedDiff.toFixed(3)} د.ك
+              </div>
+              {notes.trim() && (
+                <div className="text-sm pt-2 border-t">
+                  <span className="font-semibold">ملاحظة: </span>
+                  <span>{notes}</span>
+                </div>
+              )}
             </div>
           </div>
 
