@@ -116,6 +116,7 @@ async function ensureArabicFont() {
   if (arabicFontReady) return arabicFontReady;
 
   arabicFontReady = (async () => {
+    try {
     // Always start from a known-good VFS.
     // In Vite/ESM, pdfmake can exist behind multiple wrappers; we must set VFS on all of them.
     const builtin = await getBuiltinVfsAsync();
@@ -132,7 +133,11 @@ async function ensureArabicFont() {
     // Load font from public/ (works with non-root BASE_URL too)
     const fontUrl = `${import.meta.env.BASE_URL}fonts/Amiri-Regular.ttf`;
     const res = await fetch(fontUrl);
-    if (!res.ok) throw new Error("تعذر تحميل خط الطباعة العربي");
+    if (!res.ok) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to fetch Amiri font", { fontUrl, status: res.status, statusText: res.statusText });
+      throw new Error(`تعذر تحميل خط الطباعة العربي (HTTP ${res.status})`);
+    }
     const buf = await res.arrayBuffer();
     const base64 = arrayBufferToBase64(buf);
 
@@ -155,6 +160,12 @@ async function ensureArabicFont() {
       },
     };
     setPdfMakeFonts(mergedFonts);
+    } catch (e) {
+      // IMPORTANT: If initialization fails once, do not cache the failure.
+      // Reset so the next attempt can retry (helps with transient fetch/VFS issues and HMR).
+      arabicFontReady = null;
+      throw e;
+    }
   })();
 
   return arabicFontReady;
