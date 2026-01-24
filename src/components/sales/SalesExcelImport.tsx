@@ -11,7 +11,8 @@ import { parseSalesExcel, SalesExcelInvoice, normalizeSalesInvoiceNo } from "@/l
 import { fuzzyMatch } from "@/lib/fuzzy";
 import { checkDuplicateInvoices } from "@/hooks/useInvoiceDuplicateCheck";
 import { getDisplayQuantities, mergeNotesWithQuantities } from "@/lib/salesLineQuantities";
-import { useSalesExpectedValue } from "@/hooks/useSalesExpectedValue";
+import { useNavigate } from "react-router-dom";
+import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 
 const LAST_IMPORT_STORAGE_KEY = "sales_invoices:last_import:v1";
 const MAX_CACHED_FILE_BYTES = 4_500_000;
@@ -79,6 +80,7 @@ const InvoicePreviewCard = ({
   removeLine,
   addLine,
 }: InvoiceCardProps) => {
+  const navigate = useNavigate();
   const hasUnmatched = inv.lines.some((l) => !l.matchedItemId);
   const lineCount = inv.lines.length;
   const grandTotal = inv.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0).toFixed(3);
@@ -88,7 +90,7 @@ const InvoicePreviewCard = ({
     [inv.lines]
   );
 
-  const { data: expectedMap } = useSalesExpectedValue({
+  const { data: stockPricingMap } = useSalesStockPricing({
     itemIds: itemIdsForInvoice,
     invoiceDate: inv.invoiceDate,
   });
@@ -186,8 +188,12 @@ const InvoicePreviewCard = ({
                 <th className="p-2 text-end">الكمية المباعه</th>
                 <th className="p-2 text-end">السعر للوحدة</th>
                 <th className="p-2 text-end">الإجمالي</th>
-                <th className="p-2 text-end">إجمالي البيع المتوقع (ف)</th>
-                <th className="p-2 text-end">فرق البيع عن المتوقع</th>
+                <th className="p-2 text-end border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</th>
+                <th className="p-2 text-end bg-amber-50">سعر الوحدة-شراء</th>
+                <th className="p-2 text-end bg-amber-50">هامش</th>
+                <th className="p-2 text-end bg-amber-50">سعر البيع المتوقع للوحدة</th>
+                <th className="p-2 text-end bg-amber-50">إجمالي سعر البيع المتوقع</th>
+                <th className="p-2 text-end border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</th>
                 <th className="p-2"></th>
               </tr>
             </thead>
@@ -215,11 +221,19 @@ const InvoicePreviewCard = ({
                     updateLineField(invIdx, lineIdx, "quantity", nextSold);
                   };
 
-                  const expectedValue = line.matchedItemId
-                    ? Number(expectedMap?.[line.matchedItemId]?.expectedValue ?? 0)
-                    : 0;
+                  const sp = line.matchedItemId ? stockPricingMap?.[line.matchedItemId] : undefined;
+                  const stockBalance = Number(sp?.stockBalance ?? 0);
+                  const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+                  const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+                  const expectedUnit = purchaseUnit * margin;
                   const actualLineTotal = Number(line.quantity * line.unitPrice);
-                  const diffFromExpected = actualLineTotal - expectedValue;
+                  const expectedTotal = Number(sold || 0) * expectedUnit;
+                  const diffFromExpected = expectedTotal - actualLineTotal;
+                  const purchaseHeaderId = sp?.lastPurchaseHeaderId ?? null;
+                  const purchaseInvoiceNo = sp?.lastPurchaseInvoiceNo ?? null;
+
+                  const stockWarn = Number(sold || 0) > stockBalance;
+                  const diffWarn = diffFromExpected < 0;
 
                   return (
                     <tr key={lineIdx} className={line.matchedItemId ? "" : "bg-amber-50"}>
@@ -303,9 +317,44 @@ const InvoicePreviewCard = ({
                         )}
                       </td>
 
-                      <td className="p-2 text-end tabular-nums">{actualLineTotal.toFixed(3)}</td>
-                      <td className="p-2 text-end tabular-nums">{expectedValue.toFixed(3)}</td>
-                      <td className="p-2 text-end tabular-nums">{diffFromExpected.toFixed(3)}</td>
+                       <td className="p-2 text-end tabular-nums">{actualLineTotal.toFixed(3)}</td>
+
+                       <td
+                         className={
+                           "p-2 text-end tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
+                           (stockWarn ? "ring-1 ring-amber-400" : "")
+                         }
+                         title="الرصيد = افتتاحي + مشتريات - مبيعات - توالف (ضمن الفترة)"
+                       >
+                         {stockBalance.toFixed(3)}
+                       </td>
+
+                       <td className="p-2 text-end tabular-nums bg-amber-50">
+                         {purchaseHeaderId ? (
+                           <button
+                             type="button"
+                             className="underline underline-offset-4"
+                             title={`فتح آخر فاتورة شراء: ${purchaseInvoiceNo ?? ""}`}
+                             onClick={() => navigate(`/purchases/${purchaseHeaderId}`)}
+                           >
+                             {purchaseUnit.toFixed(3)}
+                           </button>
+                         ) : (
+                           purchaseUnit.toFixed(3)
+                         )}
+                       </td>
+
+                       <td className="p-2 text-end tabular-nums bg-amber-50">{margin.toFixed(3)}</td>
+                       <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>
+                       <td className="p-2 text-end tabular-nums bg-amber-50">{expectedTotal.toFixed(3)}</td>
+                       <td
+                         className={
+                           "p-2 text-end tabular-nums border-e-2 border-amber-400 bg-amber-50 " +
+                           (diffWarn ? "text-destructive font-semibold" : "")
+                         }
+                       >
+                         {diffFromExpected.toFixed(3)}
+                       </td>
 
                       <td className="p-2">
                         {inv.editing && (

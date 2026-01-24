@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { isInvoiceDuplicate } from "@/hooks/useInvoiceDuplicateCheck";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useNavigate } from "react-router-dom";
+import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 
 interface SalesLine {
   id: string;
@@ -18,6 +20,7 @@ interface SalesLine {
 }
 
 const SalesManualEntry = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [invoiceNo, setInvoiceNo] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -83,6 +86,12 @@ const SalesManualEntry = () => {
     for (const it of items ?? []) map.set(it.id, it);
     return map;
   }, [items]);
+
+  const itemIdsForInvoice = useMemo(() => lines.map((l) => l.item_id).filter(Boolean), [lines]);
+  const { data: stockPricingMap } = useSalesStockPricing({
+    itemIds: itemIdsForInvoice,
+    invoiceDate,
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -350,11 +359,32 @@ const SalesManualEntry = () => {
                   <th className="p-2 text-end w-28">الكمية *</th>
                   <th className="p-2 text-end w-28">السعر *</th>
                   <th className="p-2 text-end w-28">الإجمالي</th>
+                  <th className="p-2 text-end border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</th>
+                  <th className="p-2 text-end bg-amber-50">سعر الوحدة-شراء</th>
+                  <th className="p-2 text-end bg-amber-50">هامش</th>
+                  <th className="p-2 text-end bg-amber-50">سعر البيع المتوقع للوحدة</th>
+                  <th className="p-2 text-end bg-amber-50">إجمالي سعر البيع المتوقع</th>
+                  <th className="p-2 text-end border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</th>
                   <th className="p-2 w-12"></th>
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line, idx) => (
+                  (() => {
+                    const sp = line.item_id ? stockPricingMap?.[line.item_id] : undefined;
+                    const stockBalance = Number(sp?.stockBalance ?? 0);
+                    const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+                    const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+                    const expectedUnit = purchaseUnit * margin;
+                    const actualLineTotal = Number(line.quantity * line.unit_price);
+                    const expectedTotal = Number(line.quantity || 0) * expectedUnit;
+                    const diff = expectedTotal - actualLineTotal;
+                    const stockWarn = Number(line.quantity || 0) > stockBalance;
+                    const diffWarn = diff < 0;
+                    const purchaseHeaderId = sp?.lastPurchaseHeaderId ?? null;
+                    const purchaseInvoiceNo = sp?.lastPurchaseInvoiceNo ?? null;
+
+                    return (
                   <tr key={line.id} className="border-b">
                     <td className="p-2">{idx + 1}</td>
                     <td className="p-2">
@@ -408,6 +438,44 @@ const SalesManualEntry = () => {
                     <td className="p-2 text-end tabular-nums">
                       {(line.quantity * line.unit_price).toFixed(3)}
                     </td>
+
+                    <td
+                      className={
+                        "p-2 text-end tabular-nums border-s-2 border-amber-400 bg-amber-50 " +
+                        (stockWarn ? "ring-1 ring-amber-400" : "")
+                      }
+                      title="الرصيد = افتتاحي + مشتريات - مبيعات - توالف (ضمن الفترة)"
+                    >
+                      {stockBalance.toFixed(3)}
+                    </td>
+
+                    <td className="p-2 text-end tabular-nums bg-amber-50">
+                      {purchaseHeaderId ? (
+                        <button
+                          type="button"
+                          className="underline underline-offset-4"
+                          title={`فتح آخر فاتورة شراء: ${purchaseInvoiceNo ?? ""}`}
+                          onClick={() => navigate(`/purchases/${purchaseHeaderId}`)}
+                        >
+                          {purchaseUnit.toFixed(3)}
+                        </button>
+                      ) : (
+                        purchaseUnit.toFixed(3)
+                      )}
+                    </td>
+
+                    <td className="p-2 text-end tabular-nums bg-amber-50">{margin.toFixed(3)}</td>
+                    <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>
+                    <td className="p-2 text-end tabular-nums bg-amber-50">{expectedTotal.toFixed(3)}</td>
+                    <td
+                      className={
+                        "p-2 text-end tabular-nums border-e-2 border-amber-400 bg-amber-50 " +
+                        (diffWarn ? "text-destructive font-semibold" : "")
+                      }
+                    >
+                      {diff.toFixed(3)}
+                    </td>
+
                     <td className="p-2">
                       <Button
                         variant="ghost"
@@ -419,6 +487,8 @@ const SalesManualEntry = () => {
                       </Button>
                     </td>
                   </tr>
+                    );
+                  })()
                 ))}
               </tbody>
             </table>
