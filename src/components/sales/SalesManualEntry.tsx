@@ -18,6 +18,8 @@ interface SalesLine {
   item_id: string;
   quantity: number;
   unit_price: number;
+  /** Optional manual margin override (multiplier, e.g. 1.25). If unset, we use last purchase margin. */
+  margin_factor?: number;
 }
 
 const SalesManualEntry = () => {
@@ -43,7 +45,7 @@ const SalesManualEntry = () => {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
   const [lines, setLines] = useState<SalesLine[]>([
-    { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 },
+    { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0, margin_factor: undefined },
   ]);
 
   const { data: items } = useQuery({
@@ -181,7 +183,7 @@ const SalesManualEntry = () => {
     setNotes("");
     setSalesRepId("");
     setRepCollects(false);
-    setLines([{ id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 }]);
+    setLines([{ id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0, margin_factor: undefined }]);
   };
 
   const createCustomerMutation = useMutation({
@@ -217,7 +219,7 @@ const SalesManualEntry = () => {
   const addLine = () => {
     setLines([
       ...lines,
-      { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0 },
+      { id: crypto.randomUUID(), item_id: "", quantity: 0, unit_price: 0, margin_factor: undefined },
     ]);
   };
 
@@ -386,7 +388,9 @@ const SalesManualEntry = () => {
                     const stockBalance = Number(sp?.stockBalance ?? 0);
                     const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
                     const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                    const expectedUnit = purchaseUnit * margin;
+                    const manualMargin = Number(line.margin_factor);
+                    const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
+                    const expectedUnit = purchaseUnit * usedMargin;
                     const actualLineTotal = Number(line.quantity * line.unit_price);
                     const expectedTotal = Number(line.quantity || 0) * expectedUnit;
                     const diff = expectedTotal - actualLineTotal;
@@ -485,7 +489,24 @@ const SalesManualEntry = () => {
                       )}
                     </td>
 
-                    <td className="p-2 text-end tabular-nums bg-amber-50">{margin.toFixed(3)}</td>
+                    <td className="p-2 text-end tabular-nums bg-amber-50">
+                      <Input
+                        type="number"
+                        step="0.001"
+                        className="text-end"
+                        value={Number.isFinite(Number(line.margin_factor)) ? String(line.margin_factor) : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          updateLine(
+                            line.id,
+                            "margin_factor",
+                            raw.trim() === "" ? undefined : parseFloat(raw) || 0
+                          );
+                        }}
+                        placeholder={margin.toFixed(3)}
+                        title="هامش الربح (مضاعف). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء."
+                      />
+                    </td>
                     <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>
                     <td className="p-2 text-end tabular-nums bg-amber-50">{expectedTotal.toFixed(3)}</td>
                     <td
