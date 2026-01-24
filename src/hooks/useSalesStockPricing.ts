@@ -70,7 +70,7 @@ export function useSalesStockPricing(params: {
       const { data: purchaseRows, error: purchaseErr } = await supabase
         .from("purchase_lines")
         .select(
-          `item_id, quantity_paid, quantity_free, unit_price, margin_factor, header:purchase_headers(id, invoice_no, invoice_date)`
+          `item_id, quantity_paid, quantity_free, unit_price, margin_factor, header:purchase_headers(id, invoice_no, invoice_date, created_at)`
         )
         .in("item_id", ids);
       if (purchaseErr) throw purchaseErr;
@@ -80,6 +80,7 @@ export function useSalesStockPricing(params: {
         string,
         {
           date: string;
+          createdAt: string;
           unitPrice: number;
           margin: number;
           headerId: string | null;
@@ -91,6 +92,7 @@ export function useSalesStockPricing(params: {
         const itemId = (r as any).item_id as string;
         const header = (r as any).header as any;
         const headerDate = String(header?.invoice_date ?? "");
+        const headerCreatedAt = String(header?.created_at ?? "");
         if (!headerDate) continue;
 
         if (headerDate < baselineDate || headerDate > invoiceDate) continue;
@@ -105,8 +107,20 @@ export function useSalesStockPricing(params: {
         const invoiceNo = (header?.invoice_no as string) ?? null;
 
         const prev = lastPurchaseByItem.get(itemId);
-        if (!prev || headerDate > prev.date) {
-          lastPurchaseByItem.set(itemId, { date: headerDate, unitPrice, margin, headerId, invoiceNo });
+        const isNewer =
+          !prev ||
+          headerDate > prev.date ||
+          (headerDate === prev.date && headerCreatedAt && headerCreatedAt > (prev.createdAt || ""));
+
+        if (isNewer) {
+          lastPurchaseByItem.set(itemId, {
+            date: headerDate,
+            createdAt: headerCreatedAt,
+            unitPrice,
+            margin,
+            headerId,
+            invoiceNo,
+          });
         }
       }
 
