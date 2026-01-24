@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 
@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download } from "lucide-react";
+import { normalizeArabic } from "@/lib/fuzzy";
+import { normalizeItemSearchTerm } from "@/lib/itemSearch";
 
 type Row = {
   item_id: string;
@@ -32,6 +34,18 @@ export default function InventoryReport() {
   const [toDate, setToDate] = useState<string>("");
   const [category, setCategory] = useState<string>("all");
   const [q, setQ] = useState<string>("");
+  const qRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        qRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["reports", "inventory-balance", { fromDate, toDate }],
@@ -131,14 +145,21 @@ export default function InventoryReport() {
   }, [data?.rows]);
 
   const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
+    const raw = q.trim();
+    const query = normalizeArabic(raw).toLowerCase();
+    const queryCompact = normalizeItemSearchTerm(raw).toLowerCase();
     return (data?.rows ?? []).filter((r) => {
       if (category !== "all" && r.category !== category) return false;
-      if (!query) return true;
+      if (!query && !queryCompact) return true;
+
+      const codeNorm = normalizeArabic(r.item_code).toLowerCase();
+      const codeCompact = normalizeItemSearchTerm(r.item_code).toLowerCase();
+      const nameNorm = normalizeArabic(r.item_name).toLowerCase();
+      const catNorm = normalizeArabic(r.category).toLowerCase();
+
       return (
-        r.item_code.toLowerCase().includes(query) ||
-        r.item_name.toLowerCase().includes(query) ||
-        r.category.toLowerCase().includes(query)
+        (query && (codeNorm.includes(query) || nameNorm.includes(query) || catNorm.includes(query))) ||
+        (queryCompact && codeCompact.includes(queryCompact))
       );
     });
   }, [data?.rows, q, category]);
@@ -220,7 +241,12 @@ export default function InventoryReport() {
               </div>
               <div className="md:col-span-3">
                 <label className="mb-1 block text-sm font-medium">بحث</label>
-                <Input placeholder="كود/اسم/تصنيف" value={q} onChange={(e) => setQ(e.target.value)} />
+                <Input
+                  ref={qRef}
+                  placeholder="كود/اسم/تصنيف — Ctrl+K"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
               </div>
 
               <div className="md:col-span-12 flex items-center justify-between gap-3 pt-2">
