@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import { Download } from "lucide-react";
 import { normalizeArabic } from "@/lib/fuzzy";
 import { normalizeItemSearchTerm } from "@/lib/itemSearch";
+import { fetchOpeningBaselineDate } from "@/lib/openingBaseline";
 
 type Row = {
   item_id: string;
@@ -32,6 +34,8 @@ function toNum(v: unknown) {
 export default function InventoryReport() {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [useStockDate, setUseStockDate] = useState(false);
+  const [stockDate, setStockDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>("all");
   const [q, setQ] = useState<string>("");
   const qRef = useRef<HTMLInputElement | null>(null);
@@ -48,15 +52,17 @@ export default function InventoryReport() {
   }, []);
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["reports", "inventory-balance", { fromDate, toDate }],
+    queryKey: ["reports", "inventory-balance", { fromDate, toDate, useStockDate, stockDate }],
     queryFn: async () => {
+      const baselineDate = (await fetchOpeningBaselineDate()) ?? "0001-01-01";
+
       const [{ data: items, error: itemsError }, { data: opening, error: openingError }] = await Promise.all([
         supabase
           .from("items_master")
           .select("id,item_code,item_name,category,is_active")
           .eq("is_active", true)
           .order("item_code", { ascending: true }),
-        supabase.from("opening_stock").select("item_id,quantity"),
+        supabase.from("opening_stock").select("item_id,quantity").eq("entry_date", baselineDate),
       ]);
 
       if (itemsError) throw itemsError;
@@ -72,15 +78,27 @@ export default function InventoryReport() {
         .from("wastage_lines")
         .select("item_id,quantity,wastage_headers!inner(wastage_date)");
 
-      if (fromDate) {
-        purchaseQuery.gte("purchase_headers.invoice_date", fromDate);
-        salesQuery.gte("sales_headers.invoice_date", fromDate);
-        wastageQuery.gte("wastage_headers.wastage_date", fromDate);
-      }
-      if (toDate) {
-        purchaseQuery.lte("purchase_headers.invoice_date", toDate);
-        salesQuery.lte("sales_headers.invoice_date", toDate);
-        wastageQuery.lte("wastage_headers.wastage_date", toDate);
+      if (useStockDate) {
+        const end = stockDate || toDate;
+        purchaseQuery.gte("purchase_headers.invoice_date", baselineDate);
+        salesQuery.gte("sales_headers.invoice_date", baselineDate);
+        wastageQuery.gte("wastage_headers.wastage_date", baselineDate);
+        if (end) {
+          purchaseQuery.lte("purchase_headers.invoice_date", end);
+          salesQuery.lte("sales_headers.invoice_date", end);
+          wastageQuery.lte("wastage_headers.wastage_date", end);
+        }
+      } else {
+        if (fromDate) {
+          purchaseQuery.gte("purchase_headers.invoice_date", fromDate);
+          salesQuery.gte("sales_headers.invoice_date", fromDate);
+          wastageQuery.gte("wastage_headers.wastage_date", fromDate);
+        }
+        if (toDate) {
+          purchaseQuery.lte("purchase_headers.invoice_date", toDate);
+          salesQuery.lte("sales_headers.invoice_date", toDate);
+          wastageQuery.lte("wastage_headers.wastage_date", toDate);
+        }
       }
 
       const [
@@ -203,7 +221,9 @@ export default function InventoryReport() {
       <header className="border-b bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 py-6">
           <h1 className="text-2xl font-semibold tracking-tight">تقرير الرصيد الحالي للمخزون</h1>
-          <p className="mt-1 text-sm text-muted-foreground">الرصيد = افتتاحي + مشتريات - مبيعات - توالف (حسب الفترة المحددة).</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            الرصيد = افتتاحي (ثابت) + مشتريات − مبيعات − توالف (حتى التاريخ المحدد).
+          </p>
         </div>
       </header>
 
@@ -215,13 +235,37 @@ export default function InventoryReport() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 md:grid-cols-12">
+              <div className="md:col-span-12 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Switch checked={useStockDate} onCheckedChange={setUseStockDate} />
+                  <div>
+                    <div className="text-sm font-medium">تاريخ رصيد</div>
+                    <div className="text-xs text-muted-foreground">
+                      عند التفعيل: يحسب الرصيد حتى Stock Date من تاريخ الافتتاحي الثابت.
+                    </div>
+                  </div>
+                </div>
+
+                {useStockDate ? (
+                  <div className="w-full max-w-xs">
+                    <label className="mb-1 block text-sm font-medium">Stock Date</label>
+                    <Input type="date" value={stockDate} onChange={(e) => setStockDate(e.target.value)} />
+                  </div>
+                ) : null}
+              </div>
+
               <div className="md:col-span-3">
                 <label className="mb-1 block text-sm font-medium">من تاريخ</label>
-                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  disabled={useStockDate}
+                />
               </div>
               <div className="md:col-span-3">
                 <label className="mb-1 block text-sm font-medium">إلى تاريخ</label>
-                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} disabled={useStockDate} />
               </div>
               <div className="md:col-span-3">
                 <label className="mb-1 block text-sm font-medium">التصنيف</label>

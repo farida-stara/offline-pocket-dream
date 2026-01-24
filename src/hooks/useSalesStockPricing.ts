@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchOpeningBaselineDate } from "@/lib/openingBaseline";
 
 function uniq(arr: Array<string | null | undefined>): string[] {
   return Array.from(new Set((arr ?? []).filter(Boolean) as string[]));
@@ -48,28 +49,22 @@ export function useSalesStockPricing(params: {
       const ids = uniq(itemIds);
       if (!invoiceDate || ids.length === 0) return {};
 
-      // 1) Opening stock up to invoiceDate + derive start date per item
+      // 1) Opening stock is a fixed baseline (start of work): earliest entry_date in opening_stock.
+      const baselineDate = (await fetchOpeningBaselineDate()) ?? "0001-01-01";
+
       const { data: openingRows, error: openingErr } = await supabase
         .from("opening_stock")
-        .select("item_id, quantity, entry_date")
+        .select("item_id, quantity")
         .in("item_id", ids)
-        .lte("entry_date", invoiceDate);
+        .eq("entry_date", baselineDate);
       if (openingErr) throw openingErr;
 
       const openingQtyByItem = new Map<string, number>();
-      const startDateByItem = new Map<string, string>();
       for (const r of openingRows ?? []) {
         const itemId = (r as any).item_id as string;
         const qty = toNum((r as any).quantity);
-        const d = String((r as any).entry_date ?? "");
         openingQtyByItem.set(itemId, (openingQtyByItem.get(itemId) ?? 0) + qty);
-        if (d) {
-          const prev = startDateByItem.get(itemId);
-          if (!prev || d < prev) startDateByItem.set(itemId, d);
-        }
       }
-
-      const getStart = (itemId: string) => startDateByItem.get(itemId) ?? "0001-01-01";
 
       // 2) Purchases within period (start..invoiceDate)
       const { data: purchaseRows, error: purchaseErr } = await supabase
@@ -98,8 +93,7 @@ export function useSalesStockPricing(params: {
         const headerDate = String(header?.invoice_date ?? "");
         if (!headerDate) continue;
 
-        const start = getStart(itemId);
-        if (headerDate < start || headerDate > invoiceDate) continue;
+        if (headerDate < baselineDate || headerDate > invoiceDate) continue;
 
         const paid = toNum((r as any).quantity_paid);
         const free = toNum((r as any).quantity_free);
@@ -128,8 +122,7 @@ export function useSalesStockPricing(params: {
         const itemId = (r as any).item_id as string;
         const headerDate = String((r as any)?.header?.wastage_date ?? "");
         if (!headerDate) continue;
-        const start = getStart(itemId);
-        if (headerDate < start || headerDate > invoiceDate) continue;
+        if (headerDate < baselineDate || headerDate > invoiceDate) continue;
         wastageQtyByItem.set(itemId, (wastageQtyByItem.get(itemId) ?? 0) + toNum((r as any).quantity));
       }
 
@@ -147,8 +140,7 @@ export function useSalesStockPricing(params: {
         if (!headerDate) continue;
         if (excludeSalesHeaderId && String((r as any).sales_header_id ?? "") === excludeSalesHeaderId) continue;
 
-        const start = getStart(itemId);
-        if (headerDate < start || headerDate > invoiceDate) continue;
+        if (headerDate < baselineDate || headerDate > invoiceDate) continue;
 
         soldQtyByItem.set(itemId, (soldQtyByItem.get(itemId) ?? 0) + toNum((r as any).quantity));
       }

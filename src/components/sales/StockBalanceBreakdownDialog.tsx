@@ -21,6 +21,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Loader2 } from "lucide-react";
+import { fetchOpeningBaselineDate } from "@/lib/openingBaseline";
 
 function toNum(v: unknown): number {
   const n = Number(v ?? 0);
@@ -78,12 +79,14 @@ export function StockBalanceBreakdownDialog(props: {
       const invoiceDate = props.invoiceDate!;
       const excludeSalesHeaderId = props.excludeSalesHeaderId ?? null;
 
-      // Opening stock (<= invoiceDate) + start date
+      const baselineDate = (await fetchOpeningBaselineDate()) ?? "0001-01-01";
+
+      // Opening stock is fixed baseline (start of work)
       const { data: openingRows, error: openingErr } = await supabase
         .from("opening_stock")
         .select("entry_date, quantity")
         .eq("item_id", itemId)
-        .lte("entry_date", invoiceDate)
+        .eq("entry_date", baselineDate)
         .order("entry_date", { ascending: true });
       if (openingErr) throw openingErr;
 
@@ -91,7 +94,7 @@ export function StockBalanceBreakdownDialog(props: {
         entry_date: String(r.entry_date ?? ""),
         quantity: toNum(r.quantity),
       }));
-      const startDate = openingLines.length ? openingLines[0].entry_date : "0001-01-01";
+      const startDate = baselineDate;
       const openingTotalQty = openingLines.reduce((s, r) => s + r.quantity, 0);
 
       // Purchases within [startDate..invoiceDate]
