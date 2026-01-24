@@ -42,6 +42,8 @@ const SalesDetails = () => {
   // Default should be short unless user explicitly chooses full.
   const [viewMode, setViewMode] = useState<"full" | "short">("short");
 
+  const [pdfPending, setPdfPending] = useState(false);
+
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
 
@@ -54,7 +56,8 @@ const SalesDetails = () => {
         .from("sales_headers")
         .select(`
           *,
-          customer:customers(customer_name, customer_code)
+          customer:customers(customer_name, customer_code),
+          sales_rep:sales_reps(rep_name)
         `)
         .eq("id", id)
         .single();
@@ -253,6 +256,45 @@ const SalesDetails = () => {
     });
   }, [editing, lines, viewMode]);
 
+  const repName = header?.sales_rep?.rep_name as string | undefined;
+  const paymentMethodForPdf = useMemo(() => {
+    const method = header?.payment_method || "-";
+    // Keep it simple: show the collection rep name in the PDF header via the payment method field.
+    if (repName && header?.rep_collects) return `${method} | مندوب التحصيل: ${repName}`;
+    if (repName) return `${method} | المندوب: ${repName}`;
+    return method;
+  }, [header?.payment_method, header?.rep_collects, repName]);
+
+  const handleDownloadPdf = async () => {
+    try {
+      setPdfPending(true);
+      await downloadSingleInvoicePdf({
+        title: "فاتورة مبيعات",
+        invoiceNo: header.invoice_no,
+        date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+        partyLabel: "العميل",
+        partyName: header.customer?.customer_name || "مجهول",
+        paymentMethod: paymentMethodForPdf,
+        notes: header.notes || "",
+        totals: {
+          totalAmount: Number(header.total_amount || 0),
+          expectedSellingTotal: Number(expectedSellingTotal || 0),
+        },
+        lines: (filteredLines ?? []).map((l: any) => ({
+          itemName: l.item?.item_name || l.item?.item_code || "-",
+          qty: Number(l.quantity || 0),
+          quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
+          unitPrice: Number(l.unit_price || 0),
+          lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
+        })),
+      });
+    } catch (e: any) {
+      toast.error("تعذر إنشاء PDF: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -308,30 +350,10 @@ const SalesDetails = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() =>
-                    downloadSingleInvoicePdf({
-                      title: "فاتورة مبيعات",
-                      invoiceNo: header.invoice_no,
-                      date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
-                      partyLabel: "العميل",
-                       partyName: header.customer?.customer_name || "مجهول",
-                      paymentMethod: header.payment_method || "-",
-                      notes: header.notes || "",
-                      totals: {
-                        totalAmount: Number(header.total_amount || 0),
-                        expectedSellingTotal: Number(expectedSellingTotal || 0),
-                      },
-                      lines: (filteredLines ?? []).map((l: any) => ({
-                        itemName: l.item?.item_name || l.item?.item_code || "-",
-                        qty: Number(l.quantity || 0),
-                        quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
-                        unitPrice: Number(l.unit_price || 0),
-                        lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
-                      })),
-                    })
-                  }
+                  onClick={handleDownloadPdf}
+                  disabled={pdfPending}
                 >
-                  تحميل PDF {viewMode === "short" ? "(مختصرة)" : "(كاملة)"}
+                  {pdfPending ? "جاري تجهيز PDF..." : `تحميل PDF ${viewMode === "short" ? "(مختصرة)" : "(كاملة)"}`}
                 </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
