@@ -265,7 +265,7 @@ const SalesDetails = () => {
                       invoiceNo: header.invoice_no,
                       date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
                       partyLabel: "العميل",
-                      partyName: header.customer?.customer_name || "بيع نقدي",
+                       partyName: header.customer?.customer_name || "مجهول",
                       paymentMethod: header.payment_method || "-",
                       notes: header.notes || "",
                       totals: {
@@ -351,7 +351,7 @@ const SalesDetails = () => {
                     value={editHeader?.customer_id ?? ""}
                     onChange={(e) => setEditHeader((h: any) => ({ ...h, customer_id: e.target.value }))}
                   >
-                    <option value="">بيع نقدي</option>
+                    <option value="">مجهول</option>
                     {customers?.map((c: any) => (
                       <option key={c.id} value={c.id}>
                         {c.customer_code} - {c.customer_name}
@@ -359,7 +359,7 @@ const SalesDetails = () => {
                     ))}
                   </select>
                 ) : (
-                  <p className="font-semibold">{header.customer?.customer_name || "بيع نقدي"}</p>
+                   <p className="font-semibold">{header.customer?.customer_name || "مجهول"}</p>
                 )}
               </div>
               <div>
@@ -370,9 +370,10 @@ const SalesDetails = () => {
                     value={editHeader?.payment_method ?? "cash"}
                     onChange={(e) => setEditHeader((h: any) => ({ ...h, payment_method: e.target.value }))}
                   >
-                    <option value="cash">نقد</option>
-                    <option value="card">بطاقة</option>
-                    <option value="transfer">تحويل</option>
+                    <option value="cash">نقداً</option>
+                    <option value="knet">كي نت</option>
+                    <option value="visa">فيزا</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
                     <option value="credit">آجل</option>
                     <option value="other">أخرى…</option>
                   </select>

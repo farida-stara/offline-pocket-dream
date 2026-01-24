@@ -30,7 +30,9 @@ const SalesManualEntry = () => {
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "transfer" | "credit" | "other">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "knet" | "credit" | "bank_transfer" | "visa" | "other"
+  >("cash");
   const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -127,7 +129,9 @@ const SalesManualEntry = () => {
         throw new Error(`رقم الفاتورة "${normalizedNo}" موجود مسبقاً`);
       }
 
-      const finalPaymentMethod = paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
+      const finalPaymentMethod =
+        paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
+      const safePaymentMethod = finalPaymentMethod || "cash";
 
       const { data: header, error: headerError } = await supabase
         .from("sales_headers")
@@ -136,7 +140,7 @@ const SalesManualEntry = () => {
           customer_id: customerId || null,
           invoice_date: invoiceDate,
           total_amount: totalAmount,
-          payment_method: finalPaymentMethod || null,
+            payment_method: safePaymentMethod,
           notes: notes,
           sales_rep_id: salesRepId || null,
           rep_collects: repCollects,
@@ -280,7 +284,7 @@ const SalesManualEntry = () => {
                   value={customerId}
                   onChange={(e) => setCustomerId(e.target.value)}
                 >
-                  <option value="">بيع نقدي</option>
+                  <option value="">مجهول</option>
                   {customers?.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.customer_code} - {c.customer_name}
@@ -315,8 +319,9 @@ const SalesManualEntry = () => {
                   onChange={(e) => setPaymentMethod(e.target.value as any)}
                 >
                   <option value="cash">نقد</option>
-                  <option value="card">بطاقة</option>
-                  <option value="transfer">تحويل</option>
+                  <option value="knet">كي نت</option>
+                  <option value="visa">فيزا</option>
+                  <option value="bank_transfer">تحويل بنكي</option>
                   <option value="credit">آجل</option>
                   <option value="other">أخرى…</option>
                 </select>

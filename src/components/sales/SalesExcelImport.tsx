@@ -57,6 +57,8 @@ interface MatchedLine {
 interface PreviewInvoice extends Omit<SalesExcelInvoice, "lines"> {
   lines: MatchedLine[];
   matchedCustomerId: string | null;
+  salesRepId?: string | null;
+  repCollects?: boolean;
   editing: boolean;
 }
 
@@ -65,6 +67,7 @@ type InvoiceCardProps = {
   invIdx: number;
   items: any[] | undefined;
   customers: any[] | undefined;
+  salesReps: any[] | undefined;
   updateInvoiceField: (idx: number, field: keyof PreviewInvoice, value: any) => void;
   updateLineField: (invIdx: number, lineIdx: number, field: keyof MatchedLine, value: any) => void;
   removeInvoice: (idx: number) => void;
@@ -72,11 +75,33 @@ type InvoiceCardProps = {
   addLine: (invIdx: number) => void;
 };
 
+const PAYMENT_OPTIONS = [
+  { value: "cash", label: "نقداً" },
+  { value: "knet", label: "كي نت" },
+  { value: "credit", label: "آجل" },
+  { value: "bank_transfer", label: "تحويل بنكي" },
+  { value: "visa", label: "فيزا" },
+] as const;
+
+function normalizePaymentMethod(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "cash";
+
+  const v = raw.toLowerCase();
+  if (v === "cash" || raw.includes("نقد")) return "cash";
+  if (v === "knet" || raw.includes("كي نت") || raw.includes("كي-نت") || raw.includes("k-net")) return "knet";
+  if (v === "credit" || raw.includes("آجل") || raw.includes("اجل")) return "credit";
+  if (v === "bank_transfer" || raw.includes("تحويل") || raw.includes("بنك")) return "bank_transfer";
+  if (v === "visa" || raw.includes("فيزا")) return "visa";
+  return "other";
+}
+
 const InvoicePreviewCard = ({
   inv,
   invIdx,
   items,
   customers,
+  salesReps,
   updateInvoiceField,
   updateLineField,
   removeInvoice,
@@ -161,7 +186,7 @@ const InvoicePreviewCard = ({
                 value={inv.matchedCustomerId ?? ""}
                 onChange={(e) => updateInvoiceField(invIdx, "matchedCustomerId", e.target.value || null)}
               >
-                <option value="">بيع نقدي</option>
+                <option value="">مجهول</option>
                 {customers?.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.customer_code} - {c.customer_name}
@@ -171,10 +196,65 @@ const InvoicePreviewCard = ({
             </div>
             <div>
               <label className="text-sm font-medium">طريقة الدفع</label>
-              <Input
-                value={inv.paymentMethod}
-                onChange={(e) => updateInvoiceField(invIdx, "paymentMethod", e.target.value)}
+              <div className="space-y-2">
+                <select
+                  className="w-full p-2 border rounded-md"
+                  value={normalizePaymentMethod(inv.paymentMethod)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === "other") {
+                      // Keep the existing text (if any) so user can edit it below.
+                      updateInvoiceField(invIdx, "paymentMethod", inv.paymentMethod || "");
+                      return;
+                    }
+                    updateInvoiceField(invIdx, "paymentMethod", next);
+                  }}
+                >
+                  {PAYMENT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                  <option value="other">أخرى…</option>
+                </select>
+
+                {normalizePaymentMethod(inv.paymentMethod) === "other" && (
+                  <Input
+                    value={inv.paymentMethod}
+                    onChange={(e) => updateInvoiceField(invIdx, "paymentMethod", e.target.value)}
+                    placeholder="اكتب طريقة الدفع"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">مندوب المبيعات</label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={inv.salesRepId ?? ""}
+                onChange={(e) => updateInvoiceField(invIdx, "salesRepId", e.target.value || null)}
+              >
+                <option value="">بدون</option>
+                {(salesReps ?? []).map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    {r.rep_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <input
+                id={`rep_collects_${invIdx}`}
+                type="checkbox"
+                className="h-4 w-4"
+                checked={Boolean(inv.repCollects)}
+                onChange={(e) => updateInvoiceField(invIdx, "repCollects", e.target.checked)}
               />
+              <label htmlFor={`rep_collects_${invIdx}`} className="text-sm font-medium">
+                المندوب مسؤول عن التحصيل
+              </label>
             </div>
           </div>
         ) : (
@@ -182,8 +262,8 @@ const InvoicePreviewCard = ({
             {inv.invoiceDate} |{" "}
             {inv.matchedCustomerId
               ? customers?.find((c) => c.id === inv.matchedCustomerId)?.customer_name ?? "عميل"
-              : "بيع نقدي"}{" "}
-            | {inv.paymentMethod}
+              : "مجهول"}{" "}
+            | {inv.paymentMethod || "cash"}
           </div>
         )}
 
@@ -484,6 +564,19 @@ const SalesExcelImport = () => {
     },
   });
 
+  const { data: salesReps } = useQuery({
+    queryKey: ["sales-reps"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales_reps")
+        .select("id, rep_name")
+        .eq("is_active", true)
+        .order("rep_name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const itemsMap = useMemo(() => {
     const map = new Map<string, any>();
     for (const it of items ?? []) {
@@ -579,6 +672,13 @@ const SalesExcelImport = () => {
         ...inv,
         lines: matchedLines,
         matchedCustomerId: matchCustomer(inv.customerCode, inv.customerName),
+        salesRepId: null,
+        repCollects: false,
+        paymentMethod: (() => {
+          const normalized = normalizePaymentMethod(inv.paymentMethod);
+          if (normalized === "other") return String(inv.paymentMethod ?? "").trim();
+          return normalized;
+        })(),
         editing: false,
       };
     });
@@ -697,6 +797,11 @@ const SalesExcelImport = () => {
 
       for (const inv of toSave) {
         const invoiceNo = normalizeSalesInvoiceNo(inv.invoiceNo);
+        const normalizedPayment = normalizePaymentMethod(inv.paymentMethod);
+        const paymentMethodForDb =
+          normalizedPayment === "other"
+            ? String(inv.paymentMethod ?? "").trim() || "cash"
+            : normalizedPayment || "cash";
         const totalAmount = inv.lines.reduce(
           (sum, l) => sum + l.quantity * l.unitPrice,
           0
@@ -709,8 +814,10 @@ const SalesExcelImport = () => {
             customer_id: inv.matchedCustomerId,
             invoice_date: inv.invoiceDate,
             total_amount: totalAmount,
-            payment_method: inv.paymentMethod,
+            payment_method: paymentMethodForDb,
             notes: inv.notes,
+            sales_rep_id: inv.salesRepId ?? null,
+            rep_collects: Boolean(inv.repCollects),
           })
           .select()
           .single();
@@ -821,6 +928,7 @@ const SalesExcelImport = () => {
               invIdx={invIdx}
               items={items}
               customers={customers}
+              salesReps={salesReps}
               updateInvoiceField={updateInvoiceField}
               updateLineField={updateLineField}
               removeInvoice={removeInvoice}

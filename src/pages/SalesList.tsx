@@ -141,7 +141,7 @@ const SalesList = () => {
           invoiceNo: h.invoice_no,
           date: format(new Date(h.invoice_date), "yyyy-MM-dd"),
           partyLabel: "العميل",
-          partyName: h.customer?.customer_name || "بيع نقدي",
+          partyName: h.customer?.customer_name || "مجهول",
           paymentMethod: h.payment_method || "-",
           notes: h.notes || "",
           totals: {
@@ -295,7 +295,7 @@ const SalesList = () => {
                           {format(new Date(s.invoice_date), "yyyy-MM-dd")}
                         </TableCell>
                         <TableCell>
-                          {s.customer?.customer_name || "بيع نقدي"}
+                          {s.customer?.customer_name || "مجهول"}
                         </TableCell>
                         <TableCell>{s.payment_method || "-"}</TableCell>
                         <TableCell className="text-left tabular-nums">
