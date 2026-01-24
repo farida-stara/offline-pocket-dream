@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -79,6 +79,13 @@ const Dashboard = () => {
       icon: CreditCard,
       color: "bg-muted",
       route: "/payments",
+    },
+    {
+      title: "سجل التوالف",
+      description: "تسجيل الأصناف التالفة (يخصم من المخزون)",
+      icon: Trash2,
+      color: "bg-destructive/80",
+      route: "/wastage",
     },
   ];
 

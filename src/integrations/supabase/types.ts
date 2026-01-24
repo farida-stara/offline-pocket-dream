@@ -605,6 +605,115 @@ export type Database = {
         }
         Relationships: []
       }
+      wastage_headers: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          updated_at: string
+          wastage_date: string
+          wastage_no: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          wastage_date: string
+          wastage_no: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          wastage_date?: string
+          wastage_no?: string
+        }
+        Relationships: []
+      }
+      wastage_lines: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          line_no: number
+          notes: string | null
+          quantity: number
+          reason_id: string | null
+          wastage_header_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          line_no: number
+          notes?: string | null
+          quantity?: number
+          reason_id?: string | null
+          wastage_header_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          line_no?: number
+          notes?: string | null
+          quantity?: number
+          reason_id?: string | null
+          wastage_header_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wastage_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "items_master"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wastage_lines_reason_id_fkey"
+            columns: ["reason_id"]
+            isOneToOne: false
+            referencedRelation: "wastage_reasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wastage_lines_wastage_header_id_fkey"
+            columns: ["wastage_header_id"]
+            isOneToOne: false
+            referencedRelation: "wastage_headers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wastage_reasons: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          reason_code: string
+          reason_name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          reason_code: string
+          reason_name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          reason_code?: string
+          reason_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
