@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2 } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2, UserCog } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -58,6 +58,13 @@ const Dashboard = () => {
       icon: Users,
       color: "bg-muted",
       route: "/customers",
+    },
+    {
+      title: "سجل الموظفين",
+      description: "إضافة وتعديل الموظفين (مندوبين)",
+      icon: UserCog,
+      color: "bg-muted",
+      route: "/employees",
     },
     {
       title: "الرصيد الافتتاحي",
