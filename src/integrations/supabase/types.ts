@@ -316,6 +316,7 @@ export type Database = {
           item_id: string
           line_no: number
           line_total: number | null
+          margin_factor: number
           notes: string | null
           purchase_header_id: string
           quantity_free: number | null
@@ -329,6 +330,7 @@ export type Database = {
           item_id: string
           line_no: number
           line_total?: number | null
+          margin_factor?: number
           notes?: string | null
           purchase_header_id: string
           quantity_free?: number | null
@@ -342,6 +344,7 @@ export type Database = {
           item_id?: string
           line_no?: number
           line_total?: number | null
+          margin_factor?: number
           notes?: string | null
           purchase_header_id?: string
           quantity_free?: number | null
