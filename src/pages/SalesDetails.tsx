@@ -238,6 +238,20 @@ const SalesDetails = () => {
     onError: (e: any) => toast.error("خطأ في الحذف: " + (e?.message || "خطأ غير معروف")),
   });
 
+  // IMPORTANT: Hooks must be called unconditionally and in the same order.
+  // Keep derived values like filteredLines above any early returns.
+  const header = sale?.header as any;
+  const lines = (sale?.lines ?? []) as any[];
+
+  const filteredLines = useMemo(() => {
+    if (editing) return lines ?? [];
+    if (viewMode === "full") return lines ?? [];
+    return (lines ?? []).filter((line: any) => {
+      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+      return Number(q.sold ?? 0) !== 0;
+    });
+  }, [editing, lines, viewMode]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -256,17 +270,6 @@ const SalesDetails = () => {
       </div>
     );
   }
-
-  const { header, lines } = sale;
-
-  const filteredLines = useMemo(() => {
-    if (editing) return lines ?? [];
-    if (viewMode === "full") return lines ?? [];
-    return (lines ?? []).filter((line: any) => {
-      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
-      return Number(q.sold ?? 0) !== 0;
-    });
-  }, [editing, lines, viewMode]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
