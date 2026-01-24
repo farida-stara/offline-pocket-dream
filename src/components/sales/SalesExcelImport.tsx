@@ -859,6 +859,37 @@ const SalesExcelImport = () => {
           normalizedPayment === "other"
             ? String(inv.paymentMethod ?? "").trim() || "cash"
             : normalizedPayment || "cash";
+
+        // Validate quantities before saving to avoid DB check constraint failures.
+        // DB expects quantity > 0 for every sales line.
+        const badQtyLines = inv.lines
+          .map((l, idx) => ({
+            idx,
+            itemLabel: l.itemCode || l.itemName || `#${idx + 1}`,
+            qty: Number(l.quantity),
+          }))
+          .filter((x) => !Number.isFinite(x.qty) || x.qty <= 0);
+
+        if (badQtyLines.length > 0) {
+          const sample = badQtyLines
+            .slice(0, 3)
+            .map((x) => `${x.itemLabel} (سطر ${x.idx + 1}: ${String(x.qty)})`)
+            .join("، ");
+          throw new Error(
+            `لا يمكن حفظ الفاتورة ${invoiceNo}: توجد سطور بكمية غير صالحة (يجب أن تكون > 0). مثال: ${sample}`
+          );
+        }
+
+        const badPriceLines = inv.lines
+          .map((l, idx) => ({ idx, unitPrice: Number(l.unitPrice) }))
+          .filter((x) => !Number.isFinite(x.unitPrice) || x.unitPrice <= 0);
+
+        if (badPriceLines.length > 0) {
+          throw new Error(
+            `لا يمكن حفظ الفاتورة ${invoiceNo}: يوجد سطر/سطور بسعر غير صالح (يجب أن يكون > 0).`
+          );
+        }
+
         const totalAmount = inv.lines.reduce(
           (sum, l) => sum + l.quantity * l.unitPrice,
           0
