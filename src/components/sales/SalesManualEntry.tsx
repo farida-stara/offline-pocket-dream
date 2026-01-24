@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
+import { normalizeSalesInvoiceNo } from "@/lib/salesExcel";
 
 interface SalesLine {
   id: string;
@@ -119,9 +120,7 @@ const SalesManualEntry = () => {
         0
       );
 
-      const normalizedNo = invoiceNo.toUpperCase().startsWith("S-")
-        ? invoiceNo
-        : `S-${invoiceNo}`;
+      const normalizedNo = normalizeSalesInvoiceNo(invoiceNo);
 
       // Check for duplicate
       const isDuplicate = await isInvoiceDuplicate(normalizedNo, "SALES");
@@ -133,46 +132,51 @@ const SalesManualEntry = () => {
         paymentMethod === "other" ? paymentMethodOther.trim() : paymentMethod;
       const safePaymentMethod = finalPaymentMethod || "cash";
 
-      const { data: header, error: headerError } = await supabase
-        .from("sales_headers")
-        .insert({
-          invoice_no: normalizedNo,
-          customer_id: customerId || null,
-          invoice_date: invoiceDate,
-          total_amount: totalAmount,
-            payment_method: safePaymentMethod,
-          notes: notes,
-          sales_rep_id: salesRepId || null,
-          rep_collects: repCollects,
-        })
-        .select()
-        .single();
-
-      if (headerError) throw headerError;
-
-      const { error: linesError } = await supabase.from("sales_lines").insert(
-        validLines.map((line, idx) => ({
-          sales_header_id: header.id,
-          line_no: idx + 1,
-          item_id: line.item_id,
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-        }))
-      );
-
-      if (linesError) throw linesError;
-
-      const { error: regError } = await supabase.from("invoice_register").insert({
+      // HARD guarantee: reserve invoice number in the global register first.
+      // This prevents any race condition (two saves at the same time) from creating duplicates.
+      const { error: regReserveError } = await supabase.from("invoice_register").insert({
         invoice_no: normalizedNo,
         invoice_type: "SALES",
       });
+      if (regReserveError) throw regReserveError;
 
-      // IMPORTANT: invoice_register enforces the real uniqueness.
-      // If it fails (e.g. duplicate), rollback the header/lines so we don't keep a "ghost" invoice.
-      if (regError) {
-        await supabase.from("sales_lines").delete().eq("sales_header_id", header.id);
-        await supabase.from("sales_headers").delete().eq("id", header.id);
-        throw regError;
+      try {
+        const { data: header, error: headerError } = await supabase
+          .from("sales_headers")
+          .insert({
+            invoice_no: normalizedNo,
+            customer_id: customerId || null,
+            invoice_date: invoiceDate,
+            total_amount: totalAmount,
+            payment_method: safePaymentMethod,
+            notes: notes,
+            sales_rep_id: salesRepId || null,
+            rep_collects: repCollects,
+          })
+          .select()
+          .single();
+
+        if (headerError) throw headerError;
+
+        const { error: linesError } = await supabase.from("sales_lines").insert(
+          validLines.map((line, idx) => ({
+            sales_header_id: header.id,
+            line_no: idx + 1,
+            item_id: line.item_id,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+          }))
+        );
+
+        if (linesError) throw linesError;
+      } catch (e) {
+        // If anything fails after reserving the invoice number, release it.
+        await supabase
+          .from("invoice_register")
+          .delete()
+          .eq("invoice_type", "SALES")
+          .eq("invoice_no", normalizedNo);
+        throw e;
       }
     },
     onSuccess: () => {
