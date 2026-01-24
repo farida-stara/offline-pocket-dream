@@ -28,7 +28,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
+import { downloadSingleInvoicePdf, openSingleInvoicePdf, printSingleInvoicePdf } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
@@ -39,8 +39,8 @@ const SalesDetails = () => {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
-  // Default should be short unless user explicitly chooses full.
-  const [viewMode, setViewMode] = useState<"full" | "short">("short");
+  // Default to FULL so the user sees the entire invoice immediately.
+  const [viewMode, setViewMode] = useState<"full" | "short">("full");
 
   const [pdfPending, setPdfPending] = useState(false);
 
@@ -150,6 +150,9 @@ const SalesDetails = () => {
       invoice_date: sale.header.invoice_date,
       payment_method: sale.header.payment_method ?? "cash",
       notes: sale.header.notes ?? "",
+      // Preserve non-editable fields so they never get lost on save.
+      sales_rep_id: sale.header.sales_rep_id ?? null,
+      rep_collects: sale.header.rep_collects ?? false,
     });
     setEditLines(
       (sale.lines ?? []).map((l: any) => ({
@@ -198,6 +201,9 @@ const SalesDetails = () => {
           payment_method: editHeader.payment_method === "other" ? (editHeader.payment_method_other ?? "") : editHeader.payment_method,
           notes: editHeader.notes || null,
           total_amount: totalAmount,
+          // Defensive: do not allow these to be nulled out by UI edits.
+          sales_rep_id: editHeader.sales_rep_id ?? (sale?.header as any)?.sales_rep_id ?? null,
+          rep_collects: Boolean(editHeader.rep_collects ?? (sale?.header as any)?.rep_collects ?? false),
         })
         .eq("id", id);
       if (headerError) throw headerError;
@@ -265,31 +271,55 @@ const SalesDetails = () => {
     return method;
   }, [header?.payment_method, header?.rep_collects, repName]);
 
+  const buildPdfPayload = () => ({
+    title: "فاتورة مبيعات",
+    invoiceNo: header.invoice_no,
+    date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+    partyLabel: "العميل",
+    partyName: header.customer?.customer_name || "مجهول",
+    paymentMethod: paymentMethodForPdf,
+    notes: header.notes || "",
+    totals: {
+      totalAmount: Number(header.total_amount || 0),
+      expectedSellingTotal: Number(expectedSellingTotal || 0),
+    },
+    lines: (filteredLines ?? []).map((l: any) => ({
+      itemName: l.item?.item_name || l.item?.item_code || "-",
+      qty: Number(l.quantity || 0),
+      quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
+      unitPrice: Number(l.unit_price || 0),
+      lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
+    })),
+  });
+
   const handleDownloadPdf = async () => {
     try {
       setPdfPending(true);
-      await downloadSingleInvoicePdf({
-        title: "فاتورة مبيعات",
-        invoiceNo: header.invoice_no,
-        date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
-        partyLabel: "العميل",
-        partyName: header.customer?.customer_name || "مجهول",
-        paymentMethod: paymentMethodForPdf,
-        notes: header.notes || "",
-        totals: {
-          totalAmount: Number(header.total_amount || 0),
-          expectedSellingTotal: Number(expectedSellingTotal || 0),
-        },
-        lines: (filteredLines ?? []).map((l: any) => ({
-          itemName: l.item?.item_name || l.item?.item_code || "-",
-          qty: Number(l.quantity || 0),
-          quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
-          unitPrice: Number(l.unit_price || 0),
-          lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
-        })),
-      });
+      await downloadSingleInvoicePdf(buildPdfPayload());
     } catch (e: any) {
       toast.error("تعذر إنشاء PDF: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    try {
+      setPdfPending(true);
+      await openSingleInvoicePdf(buildPdfPayload());
+    } catch (e: any) {
+      toast.error("تعذر فتح معاينة PDF: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
+    }
+  };
+
+  const handlePrintPdf = async () => {
+    try {
+      setPdfPending(true);
+      await printSingleInvoicePdf(buildPdfPayload());
+    } catch (e: any) {
+      toast.error("تعذر طباعة PDF: " + (e?.message || "خطأ غير معروف"));
     } finally {
       setPdfPending(false);
     }
@@ -354,6 +384,12 @@ const SalesDetails = () => {
                   disabled={pdfPending}
                 >
                   {pdfPending ? "جاري تجهيز PDF..." : `تحميل PDF ${viewMode === "short" ? "(مختصرة)" : "(كاملة)"}`}
+                </Button>
+                <Button type="button" variant="outline" onClick={handlePreviewPdf} disabled={pdfPending}>
+                  معاينة PDF
+                </Button>
+                <Button type="button" variant="outline" onClick={handlePrintPdf} disabled={pdfPending}>
+                  طباعة
                 </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
