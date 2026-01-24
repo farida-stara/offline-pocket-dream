@@ -248,10 +248,14 @@ const SalesManualEntry = () => {
       if (!line.item_id) return sum;
       const sp = stockPricingMap?.[line.item_id];
       const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-      const manualMargin = Number(line.margin_factor);
-      const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
-      const expectedUnit = purchaseUnit * usedMargin;
+      const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+      const manualMarginPct = Number(line.margin_factor);
+      const usedMarginMultiplier = Number.isFinite(manualMarginPct)
+        ? 1 + manualMarginPct / 100
+        : Number.isFinite(purchaseMarginMultiplier)
+          ? purchaseMarginMultiplier
+          : 1.09;
+      const expectedUnit = purchaseUnit * usedMarginMultiplier;
       const qty = Number(line.quantity ?? 0);
       if (!Number.isFinite(qty) || !Number.isFinite(expectedUnit)) return sum;
       return sum + qty * expectedUnit;
@@ -399,7 +403,7 @@ const SalesManualEntry = () => {
                   <th className="p-2 text-end w-28">الإجمالي</th>
                   <th className="p-2 text-end border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</th>
                   <th className="p-2 text-end bg-amber-50">سعر الوحدة-شراء</th>
-                  <th className="p-2 text-end bg-amber-50">هامش</th>
+                  <th className="p-2 text-end bg-amber-50">هامش %</th>
                   <th className="p-2 text-end bg-amber-50">سعر البيع المتوقع للوحدة</th>
                   <th className="p-2 text-end bg-amber-50">إجمالي سعر البيع المتوقع</th>
                   <th className="p-2 text-end border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</th>
@@ -412,10 +416,17 @@ const SalesManualEntry = () => {
                     const sp = line.item_id ? stockPricingMap?.[line.item_id] : undefined;
                     const stockBalance = Number(sp?.stockBalance ?? 0);
                     const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-                    const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                    const manualMargin = Number(line.margin_factor);
-                    const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
-                    const expectedUnit = purchaseUnit * usedMargin;
+                    const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+                    const purchaseMarginPct = Number.isFinite(purchaseMarginMultiplier)
+                      ? (purchaseMarginMultiplier - 1) * 100
+                      : NaN;
+                    const manualMarginPct = Number(line.margin_factor);
+                    const usedMarginMultiplier = Number.isFinite(manualMarginPct)
+                      ? 1 + manualMarginPct / 100
+                      : Number.isFinite(purchaseMarginMultiplier)
+                        ? purchaseMarginMultiplier
+                        : 1.09;
+                    const expectedUnit = purchaseUnit * usedMarginMultiplier;
                     const actualLineTotal = Number(line.quantity * line.unit_price);
                     const expectedTotal = Number(line.quantity || 0) * expectedUnit;
                     const diff = expectedTotal - actualLineTotal;
@@ -528,8 +539,8 @@ const SalesManualEntry = () => {
                             raw.trim() === "" ? undefined : parseFloat(raw) || 0
                           );
                         }}
-                        placeholder={margin.toFixed(3)}
-                        title="هامش الربح (مضاعف). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء."
+                        placeholder={Number.isFinite(purchaseMarginPct) ? purchaseMarginPct.toFixed(3) : "9.000"}
+                        title="هامش الربح المتوقع (%). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء، وإن لم يوجد فسيتم استخدام 9%."
                       />
                     </td>
                     <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>

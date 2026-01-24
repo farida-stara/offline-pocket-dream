@@ -121,8 +121,9 @@ const SalesDetails = () => {
       const soldQty = Number(q.sold ?? 0);
       const sp = stockPricingMap?.[line.item_id];
       const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-      const expectedUnit = purchaseUnit * margin;
+      const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+      const usedMarginMultiplier = Number.isFinite(purchaseMarginMultiplier) ? purchaseMarginMultiplier : 1.09;
+      const expectedUnit = purchaseUnit * usedMarginMultiplier;
       if (!Number.isFinite(soldQty) || !Number.isFinite(expectedUnit)) return sum;
       return sum + soldQty * expectedUnit;
     }, 0);
@@ -432,7 +433,7 @@ const SalesDetails = () => {
                     <TableHead className="text-left">الإجمالي</TableHead>
                     <TableHead className="text-center border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</TableHead>
                     <TableHead className="text-center bg-amber-50">سعر الوحدة-شراء</TableHead>
-                    <TableHead className="text-center bg-amber-50">هامش</TableHead>
+                    <TableHead className="text-center bg-amber-50">هامش %</TableHead>
                     <TableHead className="text-center bg-amber-50">سعر البيع المتوقع للوحدة</TableHead>
                     <TableHead className="text-center bg-amber-50">إجمالي سعر البيع المتوقع</TableHead>
                     <TableHead className="text-center border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</TableHead>
@@ -446,8 +447,12 @@ const SalesDetails = () => {
                           const sp = stockPricingMap?.[line.item_id];
                           const stockBalance = Number(sp?.stockBalance ?? 0);
                           const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-                          const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                          const expectedUnit = purchaseUnit * margin;
+                           const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+                           const purchaseMarginPct = Number.isFinite(purchaseMarginMultiplier)
+                             ? (purchaseMarginMultiplier - 1) * 100
+                             : NaN;
+                           const usedMarginMultiplier = Number.isFinite(purchaseMarginMultiplier) ? purchaseMarginMultiplier : 1.09;
+                           const expectedUnit = purchaseUnit * usedMarginMultiplier;
                           const soldQty = Number(q.sold ?? 0);
                           const actualLineTotal = Number(line.line_total || soldQty * Number(line.unit_price || 0));
                           const expectedLineTotal = soldQty * expectedUnit;
@@ -499,7 +504,9 @@ const SalesDetails = () => {
                                purchaseUnit.toFixed(3)
                              )}
                            </TableCell>
-                           <TableCell className="text-center tabular-nums bg-amber-50">{margin.toFixed(3)}</TableCell>
+                           <TableCell className="text-center tabular-nums bg-amber-50">
+                             {Number.isFinite(purchaseMarginPct) ? purchaseMarginPct.toFixed(3) + "%" : "9.000%"}
+                           </TableCell>
                            <TableCell className="text-center tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</TableCell>
                            <TableCell className="text-center tabular-nums bg-amber-50">{expectedLineTotal.toFixed(3)}</TableCell>
                            <TableCell
@@ -560,8 +567,12 @@ const SalesDetails = () => {
                             const sp = stockPricingMap?.[line.item_id];
                             const stockBalance = Number(sp?.stockBalance ?? 0);
                             const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-                            const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                            const expectedUnit = purchaseUnit * margin;
+                            const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+                            const purchaseMarginPct = Number.isFinite(purchaseMarginMultiplier)
+                              ? (purchaseMarginMultiplier - 1) * 100
+                              : NaN;
+                            const usedMarginMultiplier = Number.isFinite(purchaseMarginMultiplier) ? purchaseMarginMultiplier : 1.09;
+                            const expectedUnit = purchaseUnit * usedMarginMultiplier;
                             const soldQty = Number(line.quantity ?? 0);
                             const actualLineTotal = soldQty * Number(line.unit_price ?? 0);
                             const expectedLineTotal = soldQty * expectedUnit;
@@ -592,7 +603,9 @@ const SalesDetails = () => {
                                     purchaseUnit.toFixed(3)
                                   )}
                                 </TableCell>
-                                <TableCell className="text-center tabular-nums bg-amber-50">{margin.toFixed(3)}</TableCell>
+                                <TableCell className="text-center tabular-nums bg-amber-50">
+                                  {Number.isFinite(purchaseMarginPct) ? purchaseMarginPct.toFixed(3) + "%" : "9.000%"}
+                                </TableCell>
                                 <TableCell className="text-center tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</TableCell>
                                 <TableCell className="text-center tabular-nums bg-amber-50">{expectedLineTotal.toFixed(3)}</TableCell>
                                 <TableCell
