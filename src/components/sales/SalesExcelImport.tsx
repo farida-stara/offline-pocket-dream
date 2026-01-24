@@ -902,13 +902,23 @@ const SalesExcelImport = () => {
           );
         }
 
-        const badPriceLines = inv.lines
-          .map((l, idx) => ({ idx, unitPrice: Number(l.unitPrice) }))
+        // Validate prices only for lines that will be persisted.
+        // (Some templates include rows that end up with sold quantity <= 0; we don't persist them.)
+        const badPriceLines = linesToInsert
+          .map((l, idx) => ({
+            idx,
+            itemLabel: l.itemCode || l.itemName || `#${idx + 1}`,
+            unitPrice: Number(l.unitPrice),
+          }))
           .filter((x) => !Number.isFinite(x.unitPrice) || x.unitPrice <= 0);
 
         if (badPriceLines.length > 0) {
+          const sample = badPriceLines
+            .slice(0, 3)
+            .map((x) => `${x.itemLabel} (سطر ${x.idx + 1}: ${String(x.unitPrice)})`)
+            .join("، ");
           throw new Error(
-            `لا يمكن حفظ الفاتورة ${invoiceNo}: يوجد سطر/سطور بسعر غير صالح (يجب أن يكون > 0).`
+            `لا يمكن حفظ الفاتورة ${invoiceNo}: توجد سطور بسعر غير صالح (يجب أن يكون > 0). مثال: ${sample}`
           );
         }
 
