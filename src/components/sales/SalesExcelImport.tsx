@@ -126,6 +126,26 @@ const InvoicePreviewCard = ({
     invoiceDate: inv.invoiceDate,
   });
 
+  const expectedSellingTotal = useMemo(() => {
+    return inv.lines.reduce((sum, line) => {
+      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+      const soldQty = Number(q.sold ?? 0);
+      const sp = line.matchedItemId ? stockPricingMap?.[line.matchedItemId] : undefined;
+      const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
+      const manualMargin = Number(line.margin_factor);
+      const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
+      const expectedUnit = purchaseUnit * usedMargin;
+      if (!Number.isFinite(soldQty) || !Number.isFinite(expectedUnit)) return sum;
+      return sum + soldQty * expectedUnit;
+    }, 0);
+  }, [inv.lines, stockPricingMap]);
+
+  const expectedDiff = useMemo(() => {
+    const actual = Number(grandTotal);
+    return Number(expectedSellingTotal) - actual;
+  }, [expectedSellingTotal, grandTotal]);
+
   return (
     <Card key={invIdx} className={hasUnmatched ? "border-amber-400" : "border-green-400"}>
       <CardHeader className="pb-2">
@@ -255,6 +275,11 @@ const InvoicePreviewCard = ({
               <label htmlFor={`rep_collects_${invIdx}`} className="text-sm font-medium">
                 المندوب مسؤول عن التحصيل
               </label>
+            </div>
+
+            <div className="md:col-span-4">
+              <label className="text-sm font-medium">ملاحظة</label>
+              <Input value={inv.notes ?? ""} onChange={(e) => updateInvoiceField(invIdx, "notes", e.target.value)} />
             </div>
           </div>
         ) : (
@@ -514,9 +539,25 @@ const InvoicePreviewCard = ({
         )}
 
         {/* Summary */}
-        <div className="flex justify-between items-center mt-4 pt-2 border-t">
-          <span className="text-sm text-muted-foreground">عدد الأصناف: {lineCount}</span>
-          <span className="font-bold">الإجمالي: {grandTotal} د.ك</span>
+        <div className="mt-4 pt-2 border-t space-y-1">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">عدد الأصناف: {lineCount}</span>
+            <span className="font-bold">الإجمالي: {grandTotal} د.ك</span>
+          </div>
+          <div className="flex justify-between items-center text-sm text-muted-foreground">
+            <span>إجمالي سعر البيع المتوقع:</span>
+            <span className="tabular-nums">{expectedSellingTotal.toFixed(3)} د.ك</span>
+          </div>
+          <div className="flex justify-between items-center text-sm text-muted-foreground">
+            <span>الفرق (المتوقع - الإجمالي):</span>
+            <span className="tabular-nums">{expectedDiff.toFixed(3)} د.ك</span>
+          </div>
+          {!inv.editing && String(inv.notes ?? "").trim() && (
+            <div className="text-sm pt-2 border-t">
+              <span className="font-semibold">ملاحظة: </span>
+              <span>{inv.notes}</span>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
