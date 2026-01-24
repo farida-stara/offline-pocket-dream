@@ -100,8 +100,9 @@ const SalesList = () => {
         .from("sales_headers")
         .select(
           `
-          id, invoice_no, invoice_date, total_amount, payment_method, notes,
-          customer:customers(customer_name)
+          id, invoice_no, invoice_date, total_amount, payment_method, notes, rep_collects,
+          customer:customers(customer_name),
+          sales_rep:sales_reps(rep_name)
         `,
         )
         .order("invoice_date", { ascending: false })
@@ -158,7 +159,12 @@ const SalesList = () => {
           date: format(new Date(h.invoice_date), "yyyy-MM-dd"),
           partyLabel: "العميل",
           partyName: h.customer?.customer_name || "مجهول",
-          paymentMethod: h.payment_method || "-",
+          paymentMethod:
+            h.sales_rep?.rep_name && h.rep_collects
+              ? `${h.payment_method || "-"} | مندوب التحصيل: ${h.sales_rep.rep_name}`
+              : h.sales_rep?.rep_name
+                ? `${h.payment_method || "-"} | المندوب: ${h.sales_rep.rep_name}`
+                : h.payment_method || "-",
           notes: h.notes || "",
           totals: {
             totalAmount: Number(h.total_amount || 0),
@@ -188,8 +194,9 @@ const SalesList = () => {
         .from("sales_headers")
         .select(
           `
-          id, invoice_no, invoice_date, total_amount, payment_method, notes,
-          customer:customers(customer_name)
+          id, invoice_no, invoice_date, total_amount, payment_method, notes, rep_collects,
+          customer:customers(customer_name),
+          sales_rep:sales_reps(rep_name)
         `,
         )
         .eq("id", id)
@@ -222,7 +229,12 @@ const SalesList = () => {
         date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
         partyLabel: "العميل",
         partyName: header.customer?.customer_name || "مجهول",
-        paymentMethod: header.payment_method || "-",
+        paymentMethod:
+          header.sales_rep?.rep_name && header.rep_collects
+            ? `${header.payment_method || "-"} | مندوب التحصيل: ${header.sales_rep.rep_name}`
+            : header.sales_rep?.rep_name
+              ? `${header.payment_method || "-"} | المندوب: ${header.sales_rep.rep_name}`
+              : header.payment_method || "-",
         notes: header.notes || "",
         totals: {
           totalAmount: Number(header.total_amount || 0),
