@@ -38,8 +38,6 @@ export default function InventoryReport() {
   const [stockDate, setStockDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>("all");
   const [q, setQ] = useState<string>("");
-  const [exactMatch, setExactMatch] = useState(false);
-  const [balanceEq, setBalanceEq] = useState<string>("");
   const qRef = useRef<HTMLInputElement | null>(null);
 
   // (من تاريخ) ثابت = تاريخ الرصيد الافتتاحي (بداية العمل)
@@ -177,14 +175,8 @@ export default function InventoryReport() {
     const raw = q.trim();
     const query = normalizeArabic(raw).toLowerCase();
     const queryCompact = normalizeItemSearchTerm(raw).toLowerCase();
-    const balanceEqNum = balanceEq.trim() === "" ? null : Number(balanceEq);
     return (data?.rows ?? []).filter((r) => {
       if (category !== "all" && r.category !== category) return false;
-
-      if (balanceEqNum !== null && Number.isFinite(balanceEqNum)) {
-        if (toNum(r.current_qty) !== balanceEqNum) return false;
-      }
-
       if (!query && !queryCompact) return true;
 
       const codeNorm = normalizeArabic(r.item_code).toLowerCase();
@@ -192,20 +184,12 @@ export default function InventoryReport() {
       const nameNorm = normalizeArabic(r.item_name).toLowerCase();
       const catNorm = normalizeArabic(r.category).toLowerCase();
 
-
-      if (exactMatch) {
-        return (
-          (query && (codeNorm === query || nameNorm === query || catNorm === query)) ||
-          (queryCompact && codeCompact === queryCompact)
-        );
-      }
-
       return (
         (query && (codeNorm.includes(query) || nameNorm.includes(query) || catNorm.includes(query))) ||
         (queryCompact && codeCompact.includes(queryCompact))
       );
     });
-  }, [data?.rows, q, category, exactMatch, balanceEq]);
+  }, [data?.rows, q, category]);
 
   const totals = useMemo(() => {
     return filtered.reduce(
@@ -277,25 +261,6 @@ export default function InventoryReport() {
                     <Input type="date" value={stockDate} onChange={(e) => setStockDate(e.target.value)} />
                   </div>
                 ) : null}
-              </div>
-
-              <div className="md:col-span-3">
-                <label className="mb-1 block text-sm font-medium">الرصيد يساوي</label>
-                <Input
-                  type="number"
-                  step="0.001"
-                  placeholder="مثال: 0"
-                  value={balanceEq}
-                  onChange={(e) => setBalanceEq(e.target.value)}
-                />
-              </div>
-
-              <div className="md:col-span-3 flex items-end gap-3">
-                <Switch checked={exactMatch} onCheckedChange={setExactMatch} />
-                <div className="pb-1">
-                  <div className="text-sm font-medium">مطابقة كاملة للبحث</div>
-                  <div className="text-xs text-muted-foreground">يعرض النتائج المطابقة تمامًا لقيمة البحث.</div>
-                </div>
               </div>
 
               <div className="md:col-span-3">
