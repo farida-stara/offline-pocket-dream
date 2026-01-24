@@ -860,9 +860,31 @@ const SalesExcelImport = () => {
             ? String(inv.paymentMethod ?? "").trim() || "cash"
             : normalizedPayment || "cash";
 
+        // --- Normalize & validate lines for DB ---
+        // DB enforces quantity > 0 on sales_lines. In our Excel template we may have
+        // withdrawn/returned quantities which can lead to sold=0 or negative.
+        // We only persist lines with sold quantity > 0.
+        const normalizedLines = (inv.lines ?? []).map((l) => {
+          const q = getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null });
+          const soldQty = Number(q.sold ?? l.quantity);
+          return {
+            ...l,
+            // Keep DB quantity aligned with sold quantity.
+            quantity: soldQty,
+          };
+        });
+
+        const linesToInsert = normalizedLines.filter((l) => Number(l.quantity) > 0);
+
+        if (linesToInsert.length === 0) {
+          throw new Error(
+            `لا يمكن حفظ الفاتورة ${invoiceNo}: جميع السطور نتيجتها "الكمية المباعه" = 0 (أو سالبة). عدّل المسحوب/المرتجع بحيث تصبح الكمية المباعه > 0.`
+          );
+        }
+
         // Validate quantities before saving to avoid DB check constraint failures.
         // DB expects quantity > 0 for every sales line.
-        const badQtyLines = inv.lines
+        const badQtyLines = linesToInsert
           .map((l, idx) => ({
             idx,
             itemLabel: l.itemCode || l.itemName || `#${idx + 1}`,
@@ -890,8 +912,8 @@ const SalesExcelImport = () => {
           );
         }
 
-        const totalAmount = inv.lines.reduce(
-          (sum, l) => sum + l.quantity * l.unitPrice,
+        const totalAmount = linesToInsert.reduce(
+          (sum, l) => sum + Number(l.quantity) * Number(l.unitPrice),
           0
         );
 
@@ -913,12 +935,12 @@ const SalesExcelImport = () => {
         if (headerError) throw headerError;
 
         const { error: linesError } = await supabase.from("sales_lines").insert(
-          inv.lines.map((line, idx) => ({
+          linesToInsert.map((line, idx) => ({
             sales_header_id: header.id,
             line_no: idx + 1,
             item_id: line.matchedItemId!,
-            quantity: line.quantity,
-            unit_price: line.unitPrice,
+            quantity: Number(line.quantity),
+            unit_price: Number(line.unitPrice),
             notes: line.notes ?? null,
           }))
         );
