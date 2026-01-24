@@ -42,6 +42,26 @@ function getBuiltinVfs(): Record<string, string> {
   );
 }
 
+function pickAnyExistingVfs(): Record<string, string> {
+  for (const t of getPdfMakeTargets()) {
+    const v = t?.vfs;
+    if (v && typeof v === "object" && Object.keys(v).length) return v;
+  }
+  return {};
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  // Avoid spread/apply on large arrays (can throw in some browsers)
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x2000; // 8192
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j]);
+  }
+  return btoa(binary);
+}
+
 let arabicFontReady: Promise<void> | null = null;
 
 function getPdfMakeTargets(): any[] {
@@ -70,35 +90,33 @@ async function ensureArabicFont() {
   if (arabicFontReady) return arabicFontReady;
 
   arabicFontReady = (async () => {
-    // Ensure built-in VFS is set (avoid crashing at module import time)
-    // In Vite/ESM, pdfmake can have multiple wrappers; set VFS on all targets.
-    const currentVfs = (pdfMake as any).vfs || (pdfMake as any)?.default?.vfs || (pdfMake as any)?.pdfMake?.vfs;
-    if (!currentVfs || Object.keys(currentVfs).length === 0) {
-      setPdfMakeVfs(getBuiltinVfs());
+    // Always start from a known-good VFS.
+    // In Vite/ESM, pdfmake can exist behind multiple wrappers; we must set VFS on all of them.
+    const builtin = getBuiltinVfs();
+    const existing = pickAnyExistingVfs();
+    const baseVfs = Object.keys(existing).length ? existing : builtin;
+    if (!Object.keys(baseVfs).length) {
+      throw new Error("تعذر تهيئة نظام خطوط PDF");
     }
+    setPdfMakeVfs(baseVfs);
 
     // Load font from public/ (so it works in preview + published)
     const res = await fetch("/fonts/Amiri-Regular.ttf");
     if (!res.ok) throw new Error("تعذر تحميل خط الطباعة العربي");
     const buf = await res.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    const base64 = btoa(binary);
+    const base64 = arrayBufferToBase64(buf);
 
     // Add to VFS + register font family
-    const mergedVfs = {
-      ...(((pdfMake as any).vfs ?? {}) as Record<string, string>),
+    // Merge into the *current* VFS (already set above), then re-apply to all targets.
+    const current = pickAnyExistingVfs();
+    const mergedVfs: Record<string, string> = {
+      ...(Object.keys(current).length ? current : baseVfs),
       "Amiri-Regular.ttf": base64,
     };
     setPdfMakeVfs(mergedVfs);
 
     const mergedFonts = {
-      ...(pdfMake as any).fonts,
+      ...((pdfMake as any).fonts ?? {}),
       Amiri: {
         normal: "Amiri-Regular.ttf",
         bold: "Amiri-Regular.ttf",
