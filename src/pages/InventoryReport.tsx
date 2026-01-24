@@ -176,6 +176,8 @@ export default function InventoryReport() {
     const query = normalizeArabic(raw).toLowerCase();
     const queryCompact = normalizeItemSearchTerm(raw).toLowerCase();
     return (data?.rows ?? []).filter((r) => {
+      // اعرض فقط الأصناف الموجودة بالمخزن
+      if (toNum(r.current_qty) <= 0) return false;
       if (category !== "all" && r.category !== category) return false;
       if (!query && !queryCompact) return true;
 
