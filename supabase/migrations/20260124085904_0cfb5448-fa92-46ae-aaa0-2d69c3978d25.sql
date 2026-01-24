@@ -1,0 +1,1 @@
+ALTER TABLE public.sales_headers DROP CONSTRAINT IF EXISTS sales_headers_invoice_no_key;
