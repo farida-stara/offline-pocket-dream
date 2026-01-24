@@ -231,6 +231,21 @@ function invoiceToContent(inv: PdfInvoice) {
 }
 
 export async function downloadSingleInvoicePdf(inv: PdfInvoice) {
+  const pdf = await getSingleInvoicePdf(inv);
+  pdf.download(`${inv.invoiceNo}.pdf`);
+}
+
+export async function openSingleInvoicePdf(inv: PdfInvoice) {
+  const pdf = await getSingleInvoicePdf(inv);
+  pdf.open();
+}
+
+export async function printSingleInvoicePdf(inv: PdfInvoice) {
+  const pdf = await getSingleInvoicePdf(inv);
+  pdf.print();
+}
+
+export async function getSingleInvoicePdf(inv: PdfInvoice) {
   await ensureArabicFont();
 
   const docDefinition = {
@@ -252,7 +267,7 @@ export async function downloadSingleInvoicePdf(inv: PdfInvoice) {
     },
   };
 
-  pdfMake.createPdf(docDefinition as any).download(`${inv.invoiceNo}.pdf`);
+  return pdfMake.createPdf(docDefinition as any);
 }
 
 export async function downloadInvoicesPdf(fileName: string, invoices: PdfInvoice[]) {
