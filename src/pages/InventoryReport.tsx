@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
-import { Download } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import { normalizeArabic } from "@/lib/fuzzy";
 import { normalizeItemSearchTerm } from "@/lib/itemSearch";
 import { fetchOpeningBaselineDate } from "@/lib/openingBaseline";
@@ -227,6 +227,10 @@ export default function InventoryReport() {
     XLSX.writeFile(wb, `inventory_balance_${stamp}.xlsx`);
   };
 
+  const printReport = () => {
+    window.print();
+  };
+
   return (
     <main className="min-h-screen bg-background" dir="rtl">
       <header className="border-b bg-background">
@@ -309,10 +313,16 @@ export default function InventoryReport() {
                   {isFetching ? "جاري التحديث…" : `${filtered.length} صنف`}
                   {error ? <span className="ms-2">(حدث خطأ في تحميل البيانات)</span> : null}
                 </div>
-                <Button onClick={exportExcel} disabled={!filtered.length}>
-                  <Download className="ms-2 h-4 w-4" />
-                  تصدير Excel
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={printReport}>
+                    <Printer className="ms-2 h-4 w-4" />
+                    طباعة
+                  </Button>
+                  <Button onClick={exportExcel} disabled={!filtered.length}>
+                    <Download className="ms-2 h-4 w-4" />
+                    تصدير Excel
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
