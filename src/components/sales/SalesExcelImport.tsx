@@ -50,6 +50,8 @@ interface MatchedLine {
   lineTotal: number;
   matchedItemId: string | null;
   matchedItemName: string;
+  /** Optional manual margin override (multiplier, e.g. 1.25). If unset, we use last purchase margin. */
+  margin_factor?: number;
 }
 
 interface PreviewInvoice extends Omit<SalesExcelInvoice, "lines"> {
@@ -236,7 +238,9 @@ const InvoicePreviewCard = ({
                   const stockBalance = Number(sp?.stockBalance ?? 0);
                   const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
                   const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                  const expectedUnit = purchaseUnit * margin;
+                  const manualMargin = Number(line.margin_factor);
+                  const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
+                  const expectedUnit = purchaseUnit * usedMargin;
                   const actualLineTotal = Number(line.quantity * line.unitPrice);
                   const expectedTotal = Number(sold || 0) * expectedUnit;
                   const diffFromExpected = expectedTotal - actualLineTotal;
@@ -366,7 +370,29 @@ const InvoicePreviewCard = ({
                          )}
                        </td>
 
-                       <td className="p-2 text-end tabular-nums bg-amber-50">{margin.toFixed(3)}</td>
+                       <td className="p-2 text-end tabular-nums bg-amber-50">
+                         {inv.editing ? (
+                           <Input
+                             type="number"
+                             step="0.001"
+                             className="w-24 text-end"
+                             value={Number.isFinite(Number(line.margin_factor)) ? String(line.margin_factor) : ""}
+                             onChange={(e) => {
+                               const raw = e.target.value;
+                               updateLineField(
+                                 invIdx,
+                                 lineIdx,
+                                 "margin_factor",
+                                 raw.trim() === "" ? undefined : parseFloat(raw) || 0
+                               );
+                             }}
+                             placeholder={margin.toFixed(3)}
+                             title="هامش الربح (مضاعف). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء."
+                           />
+                         ) : (
+                           usedMargin.toFixed(3)
+                         )}
+                       </td>
                        <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>
                        <td className="p-2 text-end tabular-nums bg-amber-50">{expectedTotal.toFixed(3)}</td>
                        <td
@@ -546,6 +572,7 @@ const SalesExcelImport = () => {
           quantity: q.sold,
           matchedItemId: match.id,
           matchedItemName: match.name,
+          margin_factor: undefined,
         };
       });
       return {
@@ -643,6 +670,7 @@ const SalesExcelImport = () => {
       lineTotal: 0,
       matchedItemId: null,
       matchedItemName: "",
+      margin_factor: undefined,
     };
 
     setPreviews((prev) =>
