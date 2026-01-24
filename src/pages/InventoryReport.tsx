@@ -33,7 +33,7 @@ function toNum(v: unknown) {
 
 export default function InventoryReport() {
   const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [useStockDate, setUseStockDate] = useState(false);
   const [stockDate, setStockDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>("all");
@@ -67,6 +67,8 @@ export default function InventoryReport() {
     queryKey: ["reports", "inventory-balance", { fromDate, toDate, useStockDate, stockDate }],
     queryFn: async () => {
       const baselineDate = (await fetchOpeningBaselineDate()) ?? "0001-01-01";
+      const today = new Date().toISOString().slice(0, 10);
+      const endDate = useStockDate ? (stockDate || today) : (toDate || today);
 
       const [{ data: items, error: itemsError }, { data: opening, error: openingError }] = await Promise.all([
         supabase
@@ -91,26 +93,21 @@ export default function InventoryReport() {
         .select("item_id,quantity,wastage_headers!inner(wastage_date)");
 
       if (useStockDate) {
-        const end = stockDate || toDate;
         purchaseQuery.gte("purchase_headers.invoice_date", baselineDate);
         salesQuery.gte("sales_headers.invoice_date", baselineDate);
         wastageQuery.gte("wastage_headers.wastage_date", baselineDate);
-        if (end) {
-          purchaseQuery.lte("purchase_headers.invoice_date", end);
-          salesQuery.lte("sales_headers.invoice_date", end);
-          wastageQuery.lte("wastage_headers.wastage_date", end);
-        }
+        purchaseQuery.lte("purchase_headers.invoice_date", endDate);
+        salesQuery.lte("sales_headers.invoice_date", endDate);
+        wastageQuery.lte("wastage_headers.wastage_date", endDate);
       } else {
         if (fromDate) {
           purchaseQuery.gte("purchase_headers.invoice_date", fromDate);
           salesQuery.gte("sales_headers.invoice_date", fromDate);
           wastageQuery.gte("wastage_headers.wastage_date", fromDate);
         }
-        if (toDate) {
-          purchaseQuery.lte("purchase_headers.invoice_date", toDate);
-          salesQuery.lte("sales_headers.invoice_date", toDate);
-          wastageQuery.lte("wastage_headers.wastage_date", toDate);
-        }
+        purchaseQuery.lte("purchase_headers.invoice_date", endDate);
+        salesQuery.lte("sales_headers.invoice_date", endDate);
+        wastageQuery.lte("wastage_headers.wastage_date", endDate);
       }
 
       const [
