@@ -31,6 +31,7 @@ import { deleteInvoice } from "@/lib/invoiceDelete";
 import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
+import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
 
 const SalesDetails = () => {
   const navigate = useNavigate();
@@ -38,6 +39,9 @@ const SalesDetails = () => {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
+
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
 
   const { data: sale, isLoading } = useQuery({
     queryKey: ["sales-details", id],
@@ -236,6 +240,14 @@ const SalesDetails = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
       <div className="max-w-5xl mx-auto">
+        <StockBalanceBreakdownDialog
+          open={breakdownOpen}
+          onOpenChange={setBreakdownOpen}
+          itemId={breakdownItemId}
+          invoiceDate={sale?.header?.invoice_date ?? null}
+          excludeSalesHeaderId={id ?? null}
+        />
+
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" onClick={() => navigate("/sales")}>
             <ArrowRight className="h-5 w-5" />
@@ -440,7 +452,17 @@ const SalesDetails = () => {
                                (stockWarn ? "ring-1 ring-amber-400" : "")
                              }
                            >
-                             {stockBalance.toFixed(3)}
+                              <button
+                                type="button"
+                                className="underline underline-offset-4"
+                                title="عرض مصدر حساب رصيد المخزن"
+                                onClick={() => {
+                                  setBreakdownItemId(line.item_id);
+                                  setBreakdownOpen(true);
+                                }}
+                              >
+                                {stockBalance.toFixed(3)}
+                              </button>
                            </TableCell>
                            <TableCell className="text-center tabular-nums bg-amber-50">
                              {sp?.lastPurchaseHeaderId ? (
