@@ -73,7 +73,7 @@ const PurchaseEntry = () => {
       // Save sequentially to keep logic simple
       for (const inv of invoices) {
         const normalizedInvoiceNo = normalizePurchaseInvoiceNo(inv.invoice_no);
-        const matchedLines = inv.lines
+         const matchedLines = inv.lines
           .map((l, idx) => ({ ...l, __line_no: idx + 1 }))
           .filter((l) =>
             l.item_id &&
@@ -106,7 +106,8 @@ const PurchaseEntry = () => {
 
         if (headerError) throw headerError;
 
-        if (matchedLines.length > 0) {
+         if (matchedLines.length > 0) {
+           const invoiceMarginFactor = 1 + Number(inv.margin_percent ?? 0) / 100;
           const { error: linesError } = await supabase.from("purchase_lines").insert(
             matchedLines.map((line, idx) => ({
               purchase_header_id: header.id,
@@ -117,6 +118,10 @@ const PurchaseEntry = () => {
               quantity_free: line.quantity_free,
               unit_price: line.unit_price,
               discount_percent: Number((line as any).discount_percent ?? 0),
+               margin_factor:
+                 Number.isFinite(Number((line as any).margin_factor)) && Number((line as any).margin_factor) > 0
+                   ? Number((line as any).margin_factor)
+                   : invoiceMarginFactor,
             })),
           );
           if (linesError) throw linesError;

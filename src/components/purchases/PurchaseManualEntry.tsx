@@ -18,6 +18,8 @@ type PurchaseLine = {
   quantity_paid: number;
   quantity_free: number;
   unit_price: number;
+  /** Manual margin multiplier (e.g. 1.25) stored in purchase_lines.margin_factor */
+  margin_factor?: number;
 };
 
 export function PurchaseManualEntry(props: {
@@ -34,7 +36,6 @@ export function PurchaseManualEntry(props: {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [paymentMethodOther, setPaymentMethodOther] = useState("");
   const [notes, setNotes] = useState("");
-  const [marginPercent, setMarginPercent] = useState<number>(0);
 
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
   const [newSupplierCode, setNewSupplierCode] = useState("");
@@ -42,7 +43,7 @@ export function PurchaseManualEntry(props: {
   const [newSupplierPhone, setNewSupplierPhone] = useState("");
 
   const [lines, setLines] = useState<PurchaseLine[]>([
-    { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 },
+    { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0, margin_factor: undefined },
   ]);
 
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
@@ -61,7 +62,9 @@ export function PurchaseManualEntry(props: {
   const expectedSellingTotal = () => {
     return lines.reduce((sum, line) => {
       const totalQty = Number(line.quantity_paid ?? 0) + Number(line.quantity_free ?? 0);
-      const expectedSell = Number(line.unit_price ?? 0) * (1 + Number(marginPercent ?? 0) / 100);
+      const margin = Number(line.margin_factor);
+      const usedMargin = Number.isFinite(margin) && margin > 0 ? margin : 1;
+      const expectedSell = Number(line.unit_price ?? 0) * usedMargin;
       return sum + expectedSell * totalQty;
     }, 0);
   };
@@ -72,12 +75,16 @@ export function PurchaseManualEntry(props: {
         throw new Error("الرجاء إدخال جميع البيانات المطلوبة");
       }
 
-      const validLines = lines.filter((l) => l.item_id && l.quantity_paid > 0 && l.unit_price > 0);
+       const validLines = lines.filter(
+         (l) =>
+           l.item_id &&
+           ((Number(l.quantity_paid) > 0 && Number(l.unit_price) > 0) || (Number(l.quantity_free) > 0 && Number(l.unit_price) === 0)),
+       );
       if (validLines.length === 0) {
         throw new Error("الرجاء إضافة عنصر واحد على الأقل");
       }
 
-      const totalAmount = validLines.reduce((sum, line) => sum + line.quantity_paid * line.unit_price, 0);
+       const totalAmount = validLines.reduce((sum, line) => sum + Number(line.quantity_paid) * Number(line.unit_price), 0);
 
       const normalizedInvoiceNo = /^[a-zA-Z]+-/.test(invoiceNo.trim()) ? invoiceNo.trim() : `P-${invoiceNo.trim()}`;
 
@@ -117,6 +124,8 @@ export function PurchaseManualEntry(props: {
           quantity_paid: line.quantity_paid,
           quantity_free: line.quantity_free,
           unit_price: line.unit_price,
+          margin_factor:
+            Number.isFinite(Number(line.margin_factor)) && Number(line.margin_factor) > 0 ? Number(line.margin_factor) : 1,
         })),
       );
 
@@ -127,8 +136,6 @@ export function PurchaseManualEntry(props: {
         invoice_type: "PURCHASE",
       });
 
-      // Margin is currently preview-only (no DB column). We keep it on screen for calculations.
-      void marginPercent;
     },
     onSuccess: () => {
       toast.success("تم حفظ فاتورة المشتريات بنجاح");
@@ -140,8 +147,7 @@ export function PurchaseManualEntry(props: {
       setPaymentMethod("cash");
       setPaymentMethodOther("");
       setNotes("");
-      setMarginPercent(0);
-      setLines([{ id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 }]);
+      setLines([{ id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0, margin_factor: undefined }]);
     },
     onError: (error: any) => {
       toast.error("خطأ في الحفظ: " + error.message);
@@ -149,11 +155,11 @@ export function PurchaseManualEntry(props: {
   });
 
   const addLine = () => {
-    setLines([...lines, { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0 }]);
+    setLines([...lines, { id: crypto.randomUUID(), item_id: "", quantity_paid: 0, quantity_free: 0, unit_price: 0, margin_factor: undefined }]);
   };
 
   const removeLine = (id: string) => {
-    if (lines.length > 1) setLines(lines.filter((l) => l.id !== id));
+    setLines(lines.filter((l) => l.id !== id));
   };
 
   const updateLine = (id: string, field: keyof PurchaseLine, value: any) => {
@@ -226,10 +232,7 @@ export function PurchaseManualEntry(props: {
               <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
             </div>
 
-            <div>
-              <label className="text-sm font-medium mb-1 block">هامش % (للعرض)</label>
-              <Input type="number" step="0.01" value={marginPercent} onChange={(e) => setMarginPercent(Number(e.target.value || 0))} />
-            </div>
+            <div className="md:col-span-1" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -264,7 +267,9 @@ export function PurchaseManualEntry(props: {
           <h3 className="text-lg font-semibold mb-4">أصناف الفاتورة</h3>
 
           {lines.map((line, idx) => {
-            const expectedSell = Number(line.unit_price ?? 0) * (1 + marginPercent / 100);
+            const margin = Number(line.margin_factor);
+            const usedMargin = Number.isFinite(margin) && margin > 0 ? margin : 1;
+            const expectedSell = Number(line.unit_price ?? 0) * usedMargin;
             const totalQty = Number(line.quantity_paid ?? 0) + Number(line.quantity_free ?? 0);
             const expectedSellTotal = expectedSell * totalQty;
             const costPrice = Number(itemsById.get(line.item_id)?.cost_price ?? 0);
@@ -277,7 +282,7 @@ export function PurchaseManualEntry(props: {
                   <div className="p-2 bg-muted rounded-md text-center tabular-nums">{idx + 1}</div>
                 </div>
 
-                <div className="col-span-4">
+                 <div className="col-span-3">
                   <label className="text-sm font-medium mb-1 block">العنصر *</label>
                   <Button
                     type="button"
@@ -321,12 +326,27 @@ export function PurchaseManualEntry(props: {
                 </div>
 
                 <div className="col-span-2">
+                  <label className="text-sm font-medium mb-1 block">هامش (مضاعف)</label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={Number.isFinite(Number(line.margin_factor)) ? String(line.margin_factor) : ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      updateLine(line.id, "margin_factor", raw.trim() === "" ? undefined : parseFloat(raw) || 0);
+                    }}
+                    placeholder="1.000"
+                    title="مثال: 1.25 يعني ربح 25% تقريباً."
+                  />
+                </div>
+
+                 <div className="col-span-1">
                   <label className="text-sm font-medium mb-1 block">إجمالي البيع المتوقع</label>
                   <div className="p-2 bg-muted rounded-md text-center tabular-nums">{expectedSellTotal.toFixed(3)}</div>
                 </div>
 
                 <div className="col-span-1">
-                  <Button variant="ghost" size="icon" onClick={() => removeLine(line.id)} disabled={lines.length === 1}>
+                  <Button variant="ghost" size="icon" onClick={() => removeLine(line.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>

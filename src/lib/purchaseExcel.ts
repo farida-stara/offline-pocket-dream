@@ -8,6 +8,8 @@ export type PurchaseImportLine = {
   quantity_free: number;
   unit_price: number;
   discount_percent: number;
+  /** Manual margin override as multiplier (e.g. 1.25). If unset, UI may use invoice margin_percent. */
+  margin_factor?: number;
   source_name?: string;
 };
 
