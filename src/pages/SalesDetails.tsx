@@ -39,7 +39,8 @@ const SalesDetails = () => {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
-  const [viewMode, setViewMode] = useState<"full" | "short">("full");
+  // Default should be short unless user explicitly chooses full.
+  const [viewMode, setViewMode] = useState<"full" | "short">("short");
 
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);

@@ -917,46 +917,52 @@ const SalesExcelImport = () => {
           0
         );
 
-        const { data: header, error: headerError } = await supabase
-          .from("sales_headers")
-          .insert({
-            invoice_no: invoiceNo,
-            customer_id: inv.matchedCustomerId,
-            invoice_date: inv.invoiceDate,
-            total_amount: totalAmount,
-            payment_method: paymentMethodForDb,
-            notes: inv.notes,
-            sales_rep_id: inv.salesRepId ?? null,
-            rep_collects: Boolean(inv.repCollects),
-          })
-          .select()
-          .single();
-
-        if (headerError) throw headerError;
-
-        const { error: linesError } = await supabase.from("sales_lines").insert(
-          linesToInsert.map((line, idx) => ({
-            sales_header_id: header.id,
-            line_no: idx + 1,
-            item_id: line.matchedItemId!,
-            quantity: Number(line.quantity),
-            unit_price: Number(line.unitPrice),
-            notes: line.notes ?? null,
-          }))
-        );
-
-        if (linesError) throw linesError;
-
-        const { error: regError } = await supabase.from("invoice_register").insert({
+        // HARD guarantee: reserve invoice number in the global register first.
+        // This prevents race conditions between duplicate-check and save.
+        const { error: regReserveError } = await supabase.from("invoice_register").insert({
           invoice_no: invoiceNo,
           invoice_type: "SALES",
         });
+        if (regReserveError) throw regReserveError;
 
-        // Rollback on duplicate/registry failure so we don't create header without registry entry.
-        if (regError) {
-          await supabase.from("sales_lines").delete().eq("sales_header_id", header.id);
-          await supabase.from("sales_headers").delete().eq("id", header.id);
-          throw regError;
+        try {
+          const { data: header, error: headerError } = await supabase
+            .from("sales_headers")
+            .insert({
+              invoice_no: invoiceNo,
+              customer_id: inv.matchedCustomerId,
+              invoice_date: inv.invoiceDate,
+              total_amount: totalAmount,
+              payment_method: paymentMethodForDb,
+              notes: inv.notes,
+              sales_rep_id: inv.salesRepId ?? null,
+              rep_collects: Boolean(inv.repCollects),
+            })
+            .select()
+            .single();
+
+          if (headerError) throw headerError;
+
+          const { error: linesError } = await supabase.from("sales_lines").insert(
+            linesToInsert.map((line, idx) => ({
+              sales_header_id: header.id,
+              line_no: idx + 1,
+              item_id: line.matchedItemId!,
+              quantity: Number(line.quantity),
+              unit_price: Number(line.unitPrice),
+              notes: line.notes ?? null,
+            }))
+          );
+
+          if (linesError) throw linesError;
+        } catch (e) {
+          // If anything fails after reserving the invoice number, release it.
+          await supabase
+            .from("invoice_register")
+            .delete()
+            .eq("invoice_type", "SALES")
+            .eq("invoice_no", invoiceNo);
+          throw e;
         }
       }
 
