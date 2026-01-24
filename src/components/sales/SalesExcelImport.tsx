@@ -888,24 +888,30 @@ const SalesExcelImport = () => {
             item_id: line.matchedItemId!,
             quantity: line.quantity,
             unit_price: line.unitPrice,
-            line_total: line.quantity * line.unitPrice,
             notes: line.notes ?? null,
           }))
         );
 
         if (linesError) throw linesError;
 
-        await supabase.from("invoice_register").insert({
+        const { error: regError } = await supabase.from("invoice_register").insert({
           invoice_no: invoiceNo,
           invoice_type: "SALES",
         });
+
+        // Rollback on duplicate/registry failure so we don't create header without registry entry.
+        if (regError) {
+          await supabase.from("sales_lines").delete().eq("sales_header_id", header.id);
+          await supabase.from("sales_headers").delete().eq("id", header.id);
+          throw regError;
+        }
       }
 
       return toSave.length;
     },
     onSuccess: (count) => {
       toast.success(`تم حفظ ${count} فاتورة مبيعات بنجاح`);
-      queryClient.invalidateQueries({ queryKey: ["sales"] });
+      queryClient.invalidateQueries({ queryKey: ["sales-list"] });
       setPreviews([]);
     },
     onError: (error: any) => {
