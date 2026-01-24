@@ -44,13 +44,37 @@ function getBuiltinVfs(): Record<string, string> {
 
 let arabicFontReady: Promise<void> | null = null;
 
+function getPdfMakeTargets(): any[] {
+  const t: any[] = [];
+  const pm: any = pdfMake as any;
+  if (pm) t.push(pm);
+  if (pm?.default) t.push(pm.default);
+  if (pm?.pdfMake) t.push(pm.pdfMake);
+  // de-duplicate
+  return Array.from(new Set(t));
+}
+
+function setPdfMakeVfs(nextVfs: Record<string, string>) {
+  for (const t of getPdfMakeTargets()) {
+    t.vfs = nextVfs;
+  }
+}
+
+function setPdfMakeFonts(nextFonts: any) {
+  for (const t of getPdfMakeTargets()) {
+    t.fonts = nextFonts;
+  }
+}
+
 async function ensureArabicFont() {
   if (arabicFontReady) return arabicFontReady;
 
   arabicFontReady = (async () => {
     // Ensure built-in VFS is set (avoid crashing at module import time)
-    if (!(pdfMake as any).vfs) {
-      (pdfMake as any).vfs = getBuiltinVfs();
+    // In Vite/ESM, pdfmake can have multiple wrappers; set VFS on all targets.
+    const currentVfs = (pdfMake as any).vfs || (pdfMake as any)?.default?.vfs || (pdfMake as any)?.pdfMake?.vfs;
+    if (!currentVfs || Object.keys(currentVfs).length === 0) {
+      setPdfMakeVfs(getBuiltinVfs());
     }
 
     // Load font from public/ (so it works in preview + published)
@@ -67,12 +91,13 @@ async function ensureArabicFont() {
     const base64 = btoa(binary);
 
     // Add to VFS + register font family
-    (pdfMake as any).vfs = {
+    const mergedVfs = {
       ...(((pdfMake as any).vfs ?? {}) as Record<string, string>),
       "Amiri-Regular.ttf": base64,
     };
+    setPdfMakeVfs(mergedVfs);
 
-    (pdfMake as any).fonts = {
+    const mergedFonts = {
       ...(pdfMake as any).fonts,
       Amiri: {
         normal: "Amiri-Regular.ttf",
@@ -81,6 +106,7 @@ async function ensureArabicFont() {
         bolditalics: "Amiri-Regular.ttf",
       },
     };
+    setPdfMakeFonts(mergedFonts);
   })();
 
   return arabicFontReady;
