@@ -17,6 +17,7 @@ import ItemsMaster from "./pages/ItemsMaster";
 import SuppliersMaster from "./pages/SuppliersMaster";
 import CustomersMaster from "./pages/CustomersMaster";
 import PaymentsLedger from "./pages/PaymentsLedger";
+import EmployeesMaster from "./pages/EmployeesMaster";
 import WastageEntry from "./pages/WastageEntry";
 import WastageList from "./pages/WastageList";
 import WastageDetails from "./pages/WastageDetails";
@@ -137,6 +138,15 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <PaymentsLedger />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/employees"
+              element={
+                <ProtectedRoute>
+                  <EmployeesMaster />
                 </ProtectedRoute>
               }
             />
