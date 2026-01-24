@@ -17,12 +17,14 @@ import ItemsMaster from "./pages/ItemsMaster";
 import SuppliersMaster from "./pages/SuppliersMaster";
 import CustomersMaster from "./pages/CustomersMaster";
 import PaymentsLedger from "./pages/PaymentsLedger";
+import WastageEntry from "./pages/WastageEntry";
+import WastageList from "./pages/WastageList";
+import WastageDetails from "./pages/WastageDetails";
 import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -135,6 +137,32 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <PaymentsLedger />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Wastage (توالف) */}
+            <Route
+              path="/wastage"
+              element={
+                <ProtectedRoute>
+                  <WastageList />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/wastage/new"
+              element={
+                <ProtectedRoute>
+                  <WastageEntry />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/wastage/:id"
+              element={
+                <ProtectedRoute>
+                  <WastageDetails />
                 </ProtectedRoute>
               }
             />

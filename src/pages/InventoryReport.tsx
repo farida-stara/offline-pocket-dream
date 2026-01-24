@@ -18,6 +18,7 @@ type Row = {
   opening_qty: number;
   purchased_qty: number;
   sold_qty: number;
+  damaged_qty: number;
   current_qty: number;
 };
 
@@ -53,23 +54,30 @@ export default function InventoryReport() {
       const salesQuery = supabase
         .from("sales_lines")
         .select("item_id,quantity,sales_headers!inner(invoice_date)");
+      const wastageQuery = supabase
+        .from("wastage_lines")
+        .select("item_id,quantity,wastage_headers!inner(wastage_date)");
 
       if (fromDate) {
         purchaseQuery.gte("purchase_headers.invoice_date", fromDate);
         salesQuery.gte("sales_headers.invoice_date", fromDate);
+        wastageQuery.gte("wastage_headers.wastage_date", fromDate);
       }
       if (toDate) {
         purchaseQuery.lte("purchase_headers.invoice_date", toDate);
         salesQuery.lte("sales_headers.invoice_date", toDate);
+        wastageQuery.lte("wastage_headers.wastage_date", toDate);
       }
 
-      const [{ data: purchases, error: purchasesError }, { data: sales, error: salesError }] = await Promise.all([
-        purchaseQuery,
-        salesQuery,
-      ]);
+      const [
+        { data: purchases, error: purchasesError },
+        { data: sales, error: salesError },
+        { data: wastages, error: wastagesError },
+      ] = await Promise.all([purchaseQuery, salesQuery, wastageQuery]);
 
       if (purchasesError) throw purchasesError;
       if (salesError) throw salesError;
+      if (wastagesError) throw wastagesError;
 
       const openingByItem = new Map<string, number>();
       for (const r of opening ?? []) {
@@ -88,11 +96,17 @@ export default function InventoryReport() {
         soldByItem.set(r.item_id, (soldByItem.get(r.item_id) ?? 0) + toNum((r as any).quantity));
       }
 
+      const damagedByItem = new Map<string, number>();
+      for (const r of wastages ?? []) {
+        damagedByItem.set(r.item_id, (damagedByItem.get(r.item_id) ?? 0) + toNum((r as any).quantity));
+      }
+
       const rows: Row[] = (items ?? []).map((it) => {
         const opening_qty = openingByItem.get(it.id) ?? 0;
         const purchased_qty = purchasedByItem.get(it.id) ?? 0;
         const sold_qty = soldByItem.get(it.id) ?? 0;
-        const current_qty = opening_qty + purchased_qty - sold_qty;
+        const damaged_qty = damagedByItem.get(it.id) ?? 0;
+        const current_qty = opening_qty + purchased_qty - sold_qty - damaged_qty;
         return {
           item_id: it.id,
           item_code: it.item_code,
@@ -101,6 +115,7 @@ export default function InventoryReport() {
           opening_qty,
           purchased_qty,
           sold_qty,
+          damaged_qty,
           current_qty,
         };
       });
@@ -134,10 +149,11 @@ export default function InventoryReport() {
         acc.opening += r.opening_qty;
         acc.purchased += r.purchased_qty;
         acc.sold += r.sold_qty;
+        acc.damaged += r.damaged_qty;
         acc.current += r.current_qty;
         return acc;
       },
-      { opening: 0, purchased: 0, sold: 0, current: 0 },
+      { opening: 0, purchased: 0, sold: 0, damaged: 0, current: 0 },
     );
   }, [filtered]);
 
@@ -149,6 +165,7 @@ export default function InventoryReport() {
       "افتتاحي": r.opening_qty,
       "مشتريات": r.purchased_qty,
       "مبيعات": r.sold_qty,
+      "توالف": r.damaged_qty,
       "الرصيد الحالي": r.current_qty,
     }));
 
@@ -165,7 +182,7 @@ export default function InventoryReport() {
       <header className="border-b bg-background">
         <div className="mx-auto w-full max-w-6xl px-4 py-6">
           <h1 className="text-2xl font-semibold tracking-tight">تقرير الرصيد الحالي للمخزون</h1>
-          <p className="mt-1 text-sm text-muted-foreground">الرصيد = افتتاحي + مشتريات - مبيعات (حسب الفترة المحددة).</p>
+          <p className="mt-1 text-sm text-muted-foreground">الرصيد = افتتاحي + مشتريات - مبيعات - توالف (حسب الفترة المحددة).</p>
         </div>
       </header>
 
@@ -225,7 +242,7 @@ export default function InventoryReport() {
             <CardHeader>
               <CardTitle className="text-xl">النتائج</CardTitle>
               <CardDescription>
-                الإجماليات: افتتاحي {totals.opening} | مشتريات {totals.purchased} | مبيعات {totals.sold} | الرصيد {totals.current}
+                الإجماليات: افتتاحي {totals.opening} | مشتريات {totals.purchased} | مبيعات {totals.sold} | توالف {totals.damaged} | الرصيد {totals.current}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -238,6 +255,7 @@ export default function InventoryReport() {
                     <TableHead className="text-right">افتتاحي</TableHead>
                     <TableHead className="text-right">مشتريات</TableHead>
                     <TableHead className="text-right">مبيعات</TableHead>
+                    <TableHead className="text-right">توالف</TableHead>
                     <TableHead className="text-right">الرصيد الحالي</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -250,6 +268,7 @@ export default function InventoryReport() {
                       <TableCell className="text-right tabular-nums">{r.opening_qty}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.purchased_qty}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.sold_qty}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.damaged_qty}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.current_qty}</TableCell>
                     </TableRow>
                   ))}
