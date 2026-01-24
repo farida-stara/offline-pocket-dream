@@ -231,7 +231,7 @@ export default function InventoryReport() {
         <div className="mx-auto w-full max-w-6xl px-4 py-6">
           <h1 className="text-2xl font-semibold tracking-tight">تقرير الرصيد الحالي للمخزون</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            الرصيد = افتتاحي (ثابت) + مشتريات − مبيعات − توالف (حتى التاريخ المحدد).
+            الرصيد = افتتاحي (ثابت) + مشتريات(حتى التاريخ المحدد) − مبيعات(حتى التاريخ المحدد) − توالف (حتى التاريخ المحدد).
           </p>
         </div>
       </header>
