@@ -132,10 +132,14 @@ const InvoicePreviewCard = ({
       const soldQty = Number(q.sold ?? 0);
       const sp = line.matchedItemId ? stockPricingMap?.[line.matchedItemId] : undefined;
       const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-      const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-      const manualMargin = Number(line.margin_factor);
-      const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
-      const expectedUnit = purchaseUnit * usedMargin;
+      const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+      const manualMarginPct = Number(line.margin_factor);
+      const usedMarginMultiplier = Number.isFinite(manualMarginPct)
+        ? 1 + manualMarginPct / 100
+        : Number.isFinite(purchaseMarginMultiplier)
+          ? purchaseMarginMultiplier
+          : 1.09;
+      const expectedUnit = purchaseUnit * usedMarginMultiplier;
       if (!Number.isFinite(soldQty) || !Number.isFinite(expectedUnit)) return sum;
       return sum + soldQty * expectedUnit;
     }, 0);
@@ -308,7 +312,7 @@ const InvoicePreviewCard = ({
                 <th className="p-2 text-end">الإجمالي</th>
                 <th className="p-2 text-end border-s-2 border-amber-400 bg-amber-50">رصيد المخزن</th>
                 <th className="p-2 text-end bg-amber-50">سعر الوحدة-شراء</th>
-                <th className="p-2 text-end bg-amber-50">هامش</th>
+                <th className="p-2 text-end bg-amber-50">هامش %</th>
                 <th className="p-2 text-end bg-amber-50">سعر البيع المتوقع للوحدة</th>
                 <th className="p-2 text-end bg-amber-50">إجمالي سعر البيع المتوقع</th>
                 <th className="p-2 text-end border-e-2 border-amber-400 bg-amber-50">فرق البيع عن المتوقع</th>
@@ -342,10 +346,17 @@ const InvoicePreviewCard = ({
                   const sp = line.matchedItemId ? stockPricingMap?.[line.matchedItemId] : undefined;
                   const stockBalance = Number(sp?.stockBalance ?? 0);
                   const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
-                  const margin = Number(sp?.lastPurchaseMarginFactor ?? 1);
-                  const manualMargin = Number(line.margin_factor);
-                  const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : margin;
-                  const expectedUnit = purchaseUnit * usedMargin;
+                  const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+                  const purchaseMarginPct = Number.isFinite(purchaseMarginMultiplier)
+                    ? (purchaseMarginMultiplier - 1) * 100
+                    : NaN;
+                  const manualMarginPct = Number(line.margin_factor);
+                  const usedMarginMultiplier = Number.isFinite(manualMarginPct)
+                    ? 1 + manualMarginPct / 100
+                    : Number.isFinite(purchaseMarginMultiplier)
+                      ? purchaseMarginMultiplier
+                      : 1.09;
+                  const expectedUnit = purchaseUnit * usedMarginMultiplier;
                   const actualLineTotal = Number(line.quantity * line.unitPrice);
                   const expectedTotal = Number(sold || 0) * expectedUnit;
                   const diffFromExpected = expectedTotal - actualLineTotal;
@@ -491,11 +502,16 @@ const InvoicePreviewCard = ({
                                  raw.trim() === "" ? undefined : parseFloat(raw) || 0
                                );
                              }}
-                             placeholder={margin.toFixed(3)}
-                             title="هامش الربح (مضاعف). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء."
+                              placeholder={Number.isFinite(purchaseMarginPct) ? purchaseMarginPct.toFixed(3) : "9.000"}
+                              title="هامش الربح المتوقع (%). اتركه فارغاً لاستخدام هامش آخر فاتورة شراء، وإن لم يوجد فسيتم استخدام 9%."
                            />
                          ) : (
-                           usedMargin.toFixed(3)
+                            (Number.isFinite(manualMarginPct)
+                              ? manualMarginPct
+                              : Number.isFinite(purchaseMarginPct)
+                                ? purchaseMarginPct
+                                : 9
+                            ).toFixed(3) + "%"
                          )}
                        </td>
                        <td className="p-2 text-end tabular-nums bg-amber-50">{expectedUnit.toFixed(3)}</td>
