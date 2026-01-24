@@ -40,6 +40,18 @@ export default function InventoryReport() {
   const [q, setQ] = useState<string>("");
   const qRef = useRef<HTMLInputElement | null>(null);
 
+  // (من تاريخ) ثابت = تاريخ الرصيد الافتتاحي (بداية العمل)
+  const { data: openingBaselineDate } = useQuery({
+    queryKey: ["opening-baseline-date"],
+    queryFn: fetchOpeningBaselineDate,
+  });
+
+  useEffect(() => {
+    if (openingBaselineDate && fromDate !== openingBaselineDate) {
+      setFromDate(openingBaselineDate);
+    }
+  }, [openingBaselineDate]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -260,7 +272,7 @@ export default function InventoryReport() {
                   type="date"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  disabled={useStockDate}
+                  disabled
                 />
               </div>
               <div className="md:col-span-3">
