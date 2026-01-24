@@ -193,6 +193,7 @@ export function PurchaseExcelImport(props: {
       quantity_free: 0,
       unit_price: 0,
       discount_percent: 0,
+      margin_factor: undefined,
     };
 
     onInvoicesChange(
@@ -206,7 +207,6 @@ export function PurchaseExcelImport(props: {
     onInvoicesChange(
       invoices.map((inv) => {
         if (inv.id !== invoiceId) return inv;
-        if (inv.lines.length <= 1) return inv;
         return { ...inv, lines: inv.lines.filter((l) => l.id !== lineId) };
       }),
     );
@@ -468,7 +468,10 @@ export function PurchaseExcelImport(props: {
                 return s + Number(l.quantity_paid ?? 0) * Number(l.unit_price ?? 0) * (1 - discount / 100);
               }, 0);
               const expectedSellingTotal = inv.lines.reduce((s, l) => {
-                const expectedSell = Number(l.unit_price ?? 0) * (1 + Number(inv.margin_percent ?? 0) / 100);
+                const invoiceMarginFactor = 1 + Number(inv.margin_percent ?? 0) / 100;
+                const manualMargin = Number(l.margin_factor);
+                const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : invoiceMarginFactor;
+                const expectedSell = Number(l.unit_price ?? 0) * usedMargin;
                 const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
                 return s + expectedSell * totalQty;
               }, 0);
@@ -562,6 +565,7 @@ export function PurchaseExcelImport(props: {
                             <th className="py-2 px-2 text-right">الكمية</th>
                             <th className="py-2 px-2 text-right">خصم %</th>
                             <th className="py-2 px-2 text-right">سعر الشراء</th>
+                            <th className="py-2 px-2 text-right">هامش</th>
                             <th className="py-2 px-2 text-right">سعر بيع متوقع</th>
                             <th className="py-2 px-2 text-right">إجمالي البيع المتوقع</th>
                             <th className="py-2 px-2 text-right">الإجمالي</th>
@@ -570,7 +574,10 @@ export function PurchaseExcelImport(props: {
                         </thead>
                         <tbody>
                           {inv.lines.map((l, idx) => {
-                            const expectedSell = Number(l.unit_price ?? 0) * (1 + Number(inv.margin_percent ?? 0) / 100);
+                            const invoiceMarginFactor = 1 + Number(inv.margin_percent ?? 0) / 100;
+                            const manualMargin = Number(l.margin_factor);
+                            const usedMargin = Number.isFinite(manualMargin) && manualMargin > 0 ? manualMargin : invoiceMarginFactor;
+                            const expectedSell = Number(l.unit_price ?? 0) * usedMargin;
                             const totalQty = Number(l.quantity_paid ?? 0) + Number(l.quantity_free ?? 0);
                             const expectedSellTotal = expectedSell * totalQty;
                             const discount = Math.max(0, Math.min(100, Number(l.discount_percent ?? 0)));
@@ -654,6 +661,21 @@ export function PurchaseExcelImport(props: {
                                     }}
                                   />
                                 </td>
+                                <td className="py-2 px-2 w-[120px]">
+                                  <Input
+                                    type="number"
+                                    step="0.001"
+                                    value={Number.isFinite(Number(l.margin_factor)) ? String(l.margin_factor) : ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      updateLine(inv.id, l.id, {
+                                        margin_factor: raw.trim() === "" ? undefined : parseFloat(raw) || 0,
+                                      });
+                                    }}
+                                    placeholder={invoiceMarginFactor.toFixed(3)}
+                                    title="هامش الربح (مضاعف مثل 1.25). اتركه فارغاً لاستخدام هامش الفاتورة % أعلاه."
+                                  />
+                                </td>
                                 <td className="py-2 px-2 w-[140px] tabular-nums">
                                   {expectedSell.toFixed(3)}
                                 </td>
@@ -669,7 +691,6 @@ export function PurchaseExcelImport(props: {
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => removeLine(inv.id, l.id)}
-                                    disabled={inv.lines.length <= 1}
                                     title="حذف السطر"
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
