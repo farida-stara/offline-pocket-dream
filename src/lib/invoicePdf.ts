@@ -107,6 +107,10 @@ function getPdfMakeTargets(): any[] {
   if (pm) t.push(pm);
   if (pm?.default) t.push(pm.default);
   if (pm?.pdfMake) t.push(pm.pdfMake);
+  const globalPm: any = (globalThis as any)?.pdfMake;
+  if (globalPm) t.push(globalPm);
+  const inst = getPdfMakeInstance();
+  if (inst) t.push(inst);
   // de-duplicate
   return Array.from(new Set(t));
 }
@@ -195,6 +199,27 @@ export async function checkArabicPdfFontHealth(): Promise<ArabicPdfFontHealth> {
   const fontUrl = `${import.meta.env.BASE_URL}fonts/Amiri-Regular.ttf`;
   try {
     await ensureArabicFont();
+
+    // Smoke-test: actually build a tiny PDF using Amiri.
+    const pm = getPdfMakeInstance();
+    const testDoc = {
+      pageSize: "A6",
+      pageMargins: [18, 18, 18, 18],
+      defaultStyle: { font: "Amiri", fontSize: 12, alignment: "right" },
+      content: [{ text: "اختبار PDF" }],
+    };
+    const pdf = pm.createPdf(testDoc as any);
+    await new Promise<void>((resolve, reject) => {
+      try {
+        pdf.getBase64(
+          () => resolve(),
+          (err: any) => reject(err),
+        );
+      } catch (err) {
+        reject(err);
+      }
+    });
+
     const targets = getPdfMakeTargets();
     const vfs = pickAnyExistingVfs();
     const vfsHasFont = Boolean(vfs?.["Amiri-Regular.ttf"]);
