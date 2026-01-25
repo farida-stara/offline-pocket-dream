@@ -33,6 +33,7 @@ import { downloadSingleInvoicePdf, openSingleInvoicePdf, printSingleInvoicePdf }
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
+import { PdfFontHealthBanner } from "@/components/pdf/PdfFontHealthBanner";
 
 const SalesDetails = () => {
   const navigate = useNavigate();
@@ -445,6 +446,8 @@ const SalesDetails = () => {
             )}
           </div>
         </div>
+
+        <PdfFontHealthBanner className="mb-6" />
 
         <Card className="mb-6">
           <CardHeader>
