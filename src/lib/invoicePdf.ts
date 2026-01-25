@@ -86,6 +86,21 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 let arabicFontReady: Promise<void> | null = null;
 
+export type ArabicPdfFontHealth =
+  | {
+      ok: true;
+      fontUrl: string;
+      vfsHasFont: boolean;
+      targets: number;
+    }
+  | {
+      ok: false;
+      fontUrl: string;
+      errorMessage: string;
+      vfsHasFont: boolean;
+      targets: number;
+    };
+
 function getPdfMakeTargets(): any[] {
   const t: any[] = [];
   const pm: any = pdfMake as any;
@@ -169,6 +184,38 @@ async function ensureArabicFont() {
   })();
 
   return arabicFontReady;
+}
+
+export function resetArabicPdfFont() {
+  // Allow explicit retry from UI.
+  arabicFontReady = null;
+}
+
+export async function checkArabicPdfFontHealth(): Promise<ArabicPdfFontHealth> {
+  const fontUrl = `${import.meta.env.BASE_URL}fonts/Amiri-Regular.ttf`;
+  try {
+    await ensureArabicFont();
+    const targets = getPdfMakeTargets();
+    const vfs = pickAnyExistingVfs();
+    const vfsHasFont = Boolean(vfs?.["Amiri-Regular.ttf"]);
+    return {
+      ok: true,
+      fontUrl,
+      vfsHasFont,
+      targets: targets.length,
+    };
+  } catch (e: any) {
+    const targets = getPdfMakeTargets();
+    const vfs = pickAnyExistingVfs();
+    const vfsHasFont = Boolean(vfs?.["Amiri-Regular.ttf"]);
+    return {
+      ok: false,
+      fontUrl,
+      errorMessage: String(e?.message || e || "Unknown error"),
+      vfsHasFont,
+      targets: targets.length,
+    };
+  }
 }
 
 function money(n: number, currency = "د.ك") {
