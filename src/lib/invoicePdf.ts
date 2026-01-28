@@ -411,6 +411,28 @@ export async function getSingleInvoicePdf(inv: PdfInvoice) {
   return pm.createPdf(docDefinition as any);
 }
 
+function pdfToBlob(pdf: any): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    try {
+      pdf.getBlob(
+        (blob: Blob) => resolve(blob),
+        (err: any) => reject(err),
+      );
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+/**
+ * Generate a Blob for an invoice PDF.
+ * Useful when you need to render/print in a window opened synchronously (to avoid popup blockers).
+ */
+export async function getSingleInvoicePdfBlob(inv: PdfInvoice): Promise<Blob> {
+  const pdf = await getSingleInvoicePdf(inv);
+  return pdfToBlob(pdf);
+}
+
 export async function downloadInvoicesPdf(fileName: string, invoices: PdfInvoice[]) {
   await ensureArabicFont();
 
