@@ -29,7 +29,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadSingleInvoicePdf, openSingleInvoicePdf, printSingleInvoicePdf } from "@/lib/invoicePdf";
+import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
@@ -320,8 +320,18 @@ const SalesDetails = () => {
 
   const handlePreviewPdf = async () => {
     try {
+      // Open a window synchronously to avoid popup blockers.
+      const win = window.open("", "_blank");
+      if (!win) {
+        toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+        return;
+      }
       setPdfPending(true);
-      await openSingleInvoicePdf(buildPdfPayload());
+      const blob = await getSingleInvoicePdfBlob(buildPdfPayload());
+      const url = URL.createObjectURL(blob);
+      win.location.href = url;
+      // Revoke after a bit to avoid memory leaks.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e: any) {
       toast.error("تعذر فتح معاينة PDF: " + (e?.message || "خطأ غير معروف"));
     } finally {
@@ -331,8 +341,30 @@ const SalesDetails = () => {
 
   const handlePrintPdf = async () => {
     try {
+      // Open a window synchronously to avoid popup blockers.
+      const win = window.open("", "_blank");
+      if (!win) {
+        toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+        return;
+      }
       setPdfPending(true);
-      await printSingleInvoicePdf(buildPdfPayload());
+      const blob = await getSingleInvoicePdfBlob(buildPdfPayload());
+      const url = URL.createObjectURL(blob);
+      win.location.href = url;
+      // Wait for the document to load then trigger print.
+      win.addEventListener(
+        "load",
+        () => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            // ignore
+          }
+        },
+        { once: true },
+      );
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e: any) {
       toast.error("تعذر طباعة PDF: " + (e?.message || "خطأ غير معروف"));
     } finally {
