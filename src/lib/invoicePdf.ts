@@ -102,6 +102,7 @@ export type ArabicPdfFontHealth =
     };
 
 function getPdfMakeTargets(): any[] {
+  // IMPORTANT: Avoid circular calls with getPdfMakeInstance().
   const t: any[] = [];
   const pm: any = pdfMake as any;
   if (pm) t.push(pm);
@@ -109,8 +110,11 @@ function getPdfMakeTargets(): any[] {
   if (pm?.pdfMake) t.push(pm.pdfMake);
   const globalPm: any = (globalThis as any)?.pdfMake;
   if (globalPm) t.push(globalPm);
+
+  // Add the chosen instance too (if different), but WITHOUT creating recursion.
   const inst = getPdfMakeInstance();
   if (inst) t.push(inst);
+
   // de-duplicate
   return Array.from(new Set(t));
 }
@@ -128,7 +132,12 @@ function setPdfMakeFonts(nextFonts: any) {
 }
 
 function getPdfMakeInstance(): any {
-  return getPdfMakeTargets().find((t) => typeof t?.createPdf === "function") || (pdfMake as any);
+  // IMPORTANT: Must NOT call getPdfMakeTargets() to avoid recursion.
+  const pm: any = pdfMake as any;
+  const globalPm: any = (globalThis as any)?.pdfMake;
+
+  const candidates = [pm, pm?.default, pm?.pdfMake, globalPm].filter(Boolean);
+  return candidates.find((t) => typeof t?.createPdf === "function") || pm;
 }
 
 async function ensureArabicFont() {
