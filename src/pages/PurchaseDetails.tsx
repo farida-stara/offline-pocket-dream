@@ -28,7 +28,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadSingleInvoicePdf } from "@/lib/invoicePdf";
+import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
 import { PdfFontHealthBanner } from "@/components/pdf/PdfFontHealthBanner";
 
 const PurchaseDetails = () => {
@@ -37,6 +37,9 @@ const PurchaseDetails = () => {
   const queryClient = useQueryClient();
 
   const [editing, setEditing] = useState(false);
+
+  const [pdfPending, setPdfPending] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
 
   const { data: purchase, isLoading } = useQuery({
     queryKey: ["purchase-details", id],
@@ -267,6 +270,79 @@ const PurchaseDetails = () => {
   const { header, lines } = purchase;
   const unmatchedLines = (purchase as any).unmatchedLines ?? [];
 
+  const buildPdfPayloadFromPurchase = (p: any) => {
+    const header = p?.header as any;
+    const lines = (p?.lines ?? []) as any[];
+
+    const expectedSellingTotal = (lines ?? []).reduce((sum: number, l: any) => {
+      const qty = Number(l?.quantity_paid ?? 0) + Number(l?.quantity_free ?? 0);
+      const sp = Number(l?.item?.selling_price ?? 0);
+      if (!Number.isFinite(qty) || !Number.isFinite(sp)) return sum;
+      return sum + qty * sp;
+    }, 0);
+
+    return {
+      title: "فاتورة شراء",
+      invoiceNo: header.invoice_no,
+      date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+      partyLabel: "المورد",
+      partyName: header.supplier?.supplier_name || "-",
+      paymentMethod: header.payment_method || "-",
+      notes: header.notes || "",
+      totals: {
+        totalAmount: Number(header.total_amount || 0),
+        expectedSellingTotal: Number(expectedSellingTotal || 0),
+      },
+      lines: (lines ?? []).map((l: any) => ({
+        itemName: l.item?.item_name || l.item?.item_code || "-",
+        qty: Number(l.quantity_paid || 0) + Number(l.quantity_free || 0),
+        unitPrice: Number(l.unit_price || 0),
+        lineTotal: Number(l.line_total || Number(l.quantity_paid || 0) * Number(l.unit_price || 0)),
+      })),
+    };
+  };
+
+  const handleRefreshAndPreview = async () => {
+    if (!id) return;
+
+    // Open synchronously to avoid popup blockers.
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+      return;
+    }
+
+    try {
+      setRefreshPending(true);
+      setPdfPending(true);
+
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["purchase-details", id] }),
+        queryClient.refetchQueries({ queryKey: ["items"] }),
+        queryClient.refetchQueries({ queryKey: ["suppliers"] }),
+      ]);
+
+      const freshPurchase = queryClient.getQueryData(["purchase-details", id]) as any;
+      if (!freshPurchase?.header) throw new Error("تعذر تحديث بيانات الفاتورة");
+
+      const payload = buildPdfPayloadFromPurchase(freshPurchase);
+      const blob = await getSingleInvoicePdfBlob(payload);
+      const url = URL.createObjectURL(blob);
+      win.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      try {
+        win.close();
+      } catch {
+        // ignore
+      }
+      toast.error("تعذر تحديث البيانات/فتح المعاينة: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
+      setRefreshPending(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6" dir="rtl">
       <div className="max-w-5xl mx-auto">
@@ -278,6 +354,9 @@ const PurchaseDetails = () => {
           <div className="ms-auto flex gap-2">
             {!editing ? (
               <>
+                <Button type="button" variant="outline" onClick={handleRefreshAndPreview} disabled={refreshPending || pdfPending}>
+                  {refreshPending ? "جاري التحديث..." : "تحديث الحسابات ثم معاينة"}
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
