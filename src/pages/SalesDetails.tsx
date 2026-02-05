@@ -45,6 +45,7 @@ const SalesDetails = () => {
   const [viewMode, setViewMode] = useState<"full" | "short">("full");
 
   const [pdfPending, setPdfPending] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
 
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownItemId, setBreakdownItemId] = useState<string | null>(null);
@@ -307,6 +308,121 @@ const SalesDetails = () => {
     })),
   });
 
+  const buildPdfPayloadFromFreshCache = (opts: {
+    saleData: any;
+    stockPricingMap: Record<string, any> | undefined;
+    viewMode: "full" | "short";
+  }) => {
+    const header = opts.saleData?.header as any;
+    const lines = (opts.saleData?.lines ?? []) as any[];
+
+    const repName = header?.sales_rep?.rep_name as string | undefined;
+    const paymentMethodForPdf = (() => {
+      const method = header?.payment_method || "-";
+      if (repName && header?.rep_collects) return `${method} | مندوب التحصيل: ${repName}`;
+      if (repName) return `${method} | المندوب: ${repName}`;
+      return method;
+    })();
+
+    const filteredLines = opts.viewMode === "full"
+      ? lines
+      : lines.filter((line: any) => {
+          const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+          return Number(q.sold ?? 0) !== 0;
+        });
+
+    const expectedSellingTotal = (lines ?? []).reduce((sum: number, line: any) => {
+      const q = getDisplayQuantities({ quantity: line.quantity, notes: line.notes ?? null });
+      const soldQty = Number(q.sold ?? 0);
+      const sp = opts.stockPricingMap?.[line.item_id];
+      const purchaseUnit = Number(sp?.lastPurchaseUnitPrice ?? 0);
+      const purchaseMarginMultiplier = Number(sp?.lastPurchaseMarginFactor ?? NaN);
+      const usedMarginMultiplier = Number.isFinite(purchaseMarginMultiplier) ? purchaseMarginMultiplier : 1.09;
+      const expectedUnit = purchaseUnit * usedMarginMultiplier;
+      if (!Number.isFinite(soldQty) || !Number.isFinite(expectedUnit)) return sum;
+      return sum + soldQty * expectedUnit;
+    }, 0);
+
+    return {
+      title: "فاتورة مبيعات",
+      invoiceNo: header.invoice_no,
+      date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+      partyLabel: "العميل",
+      partyName: header.customer?.customer_name || "مجهول",
+      paymentMethod: paymentMethodForPdf,
+      notes: header.notes || "",
+      totals: {
+        totalAmount: Number(header.total_amount || 0),
+        expectedSellingTotal: Number(expectedSellingTotal || 0),
+      },
+      lines: (filteredLines ?? []).map((l: any) => ({
+        itemName: l.item?.item_name || l.item?.item_code || "-",
+        qty: Number(l.quantity || 0),
+        quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
+        unitPrice: Number(l.unit_price || 0),
+        lineTotal: Number(l.line_total || Number(l.quantity || 0) * Number(l.unit_price || 0)),
+      })),
+    };
+  };
+
+  const handleRefreshAndPreview = async () => {
+    if (!id) return;
+
+    // Open a window synchronously to avoid popup blockers.
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+      return;
+    }
+
+    try {
+      setRefreshPending(true);
+      setPdfPending(true);
+
+      // Refetch core invoice + supporting registries + pricing calculations.
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["sales-details", id] }),
+        queryClient.refetchQueries({ queryKey: ["items"] }),
+        queryClient.refetchQueries({ queryKey: ["customers"] }),
+        queryClient.refetchQueries({ queryKey: ["sales-reps"] }),
+        queryClient.refetchQueries({
+          predicate: (q) => Array.isArray(q.queryKey) && q.queryKey[0] === "sales-stock-pricing",
+        }),
+      ]);
+
+      const freshSale = queryClient.getQueryData(["sales-details", id]) as any;
+      if (!freshSale?.header) throw new Error("تعذر تحديث بيانات الفاتورة");
+
+      const invoiceDate = String(freshSale?.header?.invoice_date ?? "");
+      const itemIds = Array.from(
+        new Set(((freshSale?.lines ?? []) as any[]).map((l: any) => l.item_id).filter(Boolean)),
+      ) as string[];
+      const stockKey: any[] = ["sales-stock-pricing", invoiceDate, id ?? "", itemIds.join("|")];
+      const freshStockPricingMap = queryClient.getQueryData(stockKey) as Record<string, any> | undefined;
+
+      const payload = buildPdfPayloadFromFreshCache({
+        saleData: freshSale,
+        stockPricingMap: freshStockPricingMap,
+        viewMode,
+      });
+
+      const blob = await getSingleInvoicePdfBlob(payload);
+      const url = URL.createObjectURL(blob);
+      win.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      try {
+        win.close();
+      } catch {
+        // ignore
+      }
+      toast.error("تعذر تحديث البيانات/فتح المعاينة: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
+      setRefreshPending(false);
+    }
+  };
+
   const handleDownloadPdf = async () => {
     try {
       setPdfPending(true);
@@ -425,6 +541,14 @@ const SalesDetails = () => {
                   عرض مختصر
                 </Button>
                 <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleRefreshAndPreview}
+                    disabled={pdfPending || refreshPending}
+                  >
+                    {refreshPending ? "جاري التحديث..." : "تحديث الحسابات ثم معاينة"}
+                  </Button>
+                  <Button
                   type="button"
                   variant="outline"
                   onClick={handleDownloadPdf}
