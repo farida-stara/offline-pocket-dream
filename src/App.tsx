@@ -25,7 +25,24 @@ import AuthPage from "./pages/Auth";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // البيانات لا تنتهي صلاحيتها - تبقى في الكاش حتى التحديث اليدوي
+      staleTime: Infinity,
+      // الكاش يبقى للأبد حتى يتم مسحه يدوياً
+      gcTime: Infinity,
+      // لا يُعاد التحميل عند التركيز على النافذة
+      refetchOnWindowFocus: false,
+      // لا يُعاد التحميل عند إعادة الاتصال بالإنترنت
+      refetchOnReconnect: false,
+      // لا يُعاد التحميل عند mount المكون
+      refetchOnMount: false,
+      // عدد المحاولات عند الفشل
+      retry: 1,
+    },
+  },
+});
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
