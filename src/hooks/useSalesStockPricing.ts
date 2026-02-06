@@ -33,17 +33,27 @@ export type SalesStockPricingRow = {
  *
  * ملاحظة: في صفحة تفاصيل البيع نستثني الفاتورة الحالية من حساب المبيعات حتى لا “تأكل” الرصيد.
  */
+/**
+ * يحسب رصيد المخزن وآخر سعر شراء - يعمل فقط عند وجود بيانات في الكاش
+ * أو عند استدعاء refetch يدوياً (من زر التحديث الشامل).
+ * 
+ * @param manualTrigger - إذا كان false، لا يتم الحساب تلقائياً (يعتمد على الكاش فقط)
+ */
 export function useSalesStockPricing(params: {
   itemIds: Array<string | null | undefined>;
   invoiceDate: string | null | undefined;
   excludeSalesHeaderId?: string | null;
+  /** إذا كان false (الافتراضي)، لا يتم الجلب تلقائياً - يعتمد على الكاش أو التحديث اليدوي */
+  manualTrigger?: boolean;
 }) {
   const invoiceDate = params.invoiceDate ?? "";
   const itemIds = useMemo(() => uniq(params.itemIds), [params.itemIds]);
   const excludeSalesHeaderId = params.excludeSalesHeaderId ?? null;
+  const manualTrigger = params.manualTrigger ?? false;
 
   return useQuery({
-    enabled: Boolean(invoiceDate) && itemIds.length > 0,
+    // لا يتم الجلب تلقائياً إلا إذا كان manualTrigger = true
+    enabled: manualTrigger && Boolean(invoiceDate) && itemIds.length > 0,
     queryKey: ["sales-stock-pricing", invoiceDate, excludeSalesHeaderId ?? "", itemIds.join("|")],
     queryFn: async (): Promise<Record<string, SalesStockPricingRow>> => {
       const ids = uniq(itemIds);
