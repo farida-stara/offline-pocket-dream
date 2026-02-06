@@ -129,10 +129,12 @@ const SalesDetails = () => {
   }, [sale]);
 
   const itemIdsForInvoice = useMemo(() => (sale?.lines ?? []).map((l: any) => l.item_id).filter(Boolean), [sale?.lines]);
+  // رصيد المخزن لا يُحسب تلقائياً - يعتمد على الكاش أو زر التحديث الشامل
   const { data: stockPricingMap } = useSalesStockPricing({
     itemIds: itemIdsForInvoice,
     invoiceDate: sale?.header?.invoice_date,
     excludeSalesHeaderId: id,
+    manualTrigger: false, // لا يجلب تلقائياً
   });
 
   const expectedSellingTotal = useMemo(() => {
