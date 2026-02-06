@@ -1,13 +1,46 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2, UserCog } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2, UserCog, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleGlobalRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Invalidate and refetch all major caches
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["items"] }),
+        queryClient.invalidateQueries({ queryKey: ["suppliers"] }),
+        queryClient.invalidateQueries({ queryKey: ["customers"] }),
+        queryClient.invalidateQueries({ queryKey: ["sales-reps"] }),
+        queryClient.invalidateQueries({ queryKey: ["purchases"] }),
+        queryClient.invalidateQueries({ queryKey: ["sales"] }),
+        queryClient.invalidateQueries({ queryKey: ["wastage"] }),
+        queryClient.invalidateQueries({ queryKey: ["opening-stock"] }),
+        queryClient.invalidateQueries({ queryKey: ["payment-ledger"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-report"] }),
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("purchase-details") }),
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("sales-details") }),
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("sales-stock-pricing") }),
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("wastage-details") }),
+      ]);
+      toast.success("تم تحديث جميع البيانات والكاش بنجاح");
+    } catch (e: any) {
+      toast.error("حدث خطأ أثناء التحديث: " + (e?.message || ""));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const menuItems = [
     {
@@ -110,10 +143,16 @@ const Dashboard = () => {
             {user?.email ? <p className="text-xs text-muted-foreground mt-2">{user.email}</p> : null}
           </div>
 
-          <Button variant="outline" onClick={onLogout} className="w-fit">
-            <LogOut className="h-4 w-4 ml-2" />
-            تسجيل الخروج
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={handleGlobalRefresh} disabled={refreshing} className="w-fit">
+              <RefreshCw className={`h-4 w-4 ml-2 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "جاري التحديث..." : "تحديث شامل للبيانات"}
+            </Button>
+            <Button variant="outline" onClick={onLogout} className="w-fit">
+              <LogOut className="h-4 w-4 ml-2" />
+              تسجيل الخروج
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
