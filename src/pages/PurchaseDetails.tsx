@@ -29,7 +29,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
 import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
-import { PdfFontHealthBanner } from "@/components/pdf/PdfFontHealthBanner";
+
 
 const PurchaseDetails = () => {
   const navigate = useNavigate();
@@ -425,7 +425,7 @@ const PurchaseDetails = () => {
           </div>
         </div>
 
-        <PdfFontHealthBanner className="mb-6" />
+        
 
         <Card className="mb-6">
           <CardHeader>
