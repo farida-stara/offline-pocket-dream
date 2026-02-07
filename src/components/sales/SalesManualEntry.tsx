@@ -97,11 +97,9 @@ const SalesManualEntry = () => {
   }, [items]);
 
   const itemIdsForInvoice = useMemo(() => lines.map((l) => l.item_id).filter(Boolean), [lines]);
-  // رصيد المخزن لا يُحسب تلقائياً - يعتمد على الكاش أو زر التحديث الشامل
+  // يقرأ من اللقطات المحسوبة فقط - بدون أي حسابات تلقائية
   const { data: stockPricingMap } = useSalesStockPricing({
     itemIds: itemIdsForInvoice,
-    invoiceDate,
-    manualTrigger: false, // لا يجلب تلقائياً
   });
 
   const saveMutation = useMutation({

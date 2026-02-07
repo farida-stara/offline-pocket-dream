@@ -29,6 +29,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
 import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
+import { RebuildButton } from "@/components/RebuildButton";
 
 
 const PurchaseDetails = () => {
@@ -350,7 +351,8 @@ const PurchaseDetails = () => {
           <Button variant="ghost" onClick={() => navigate("/purchases")}>
             <ArrowRight className="h-5 w-5" />
           </Button>
-          <h1 className="text-3xl font-bold text-slate-900">تفاصيل فاتورة الشراء</h1>
+          <h1 className="text-3xl font-bold text-foreground">تفاصيل فاتورة الشراء</h1>
+          <RebuildButton variant="icon" />
           <div className="ms-auto flex gap-2">
             {!editing ? (
               <>

@@ -32,6 +32,68 @@ export type Database = {
         }
         Relationships: []
       }
+      computed_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          last_purchase_date: string | null
+          last_purchase_invoice_id: string | null
+          last_purchase_margin_factor: number | null
+          last_purchase_price: number | null
+          last_rebuild_at: string
+          opening_qty: number
+          purchased_qty: number
+          rebuild_version: number
+          snapshot_date: string
+          sold_qty: number
+          stock_balance: number
+          wastage_qty: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          last_purchase_date?: string | null
+          last_purchase_invoice_id?: string | null
+          last_purchase_margin_factor?: number | null
+          last_purchase_price?: number | null
+          last_rebuild_at?: string
+          opening_qty?: number
+          purchased_qty?: number
+          rebuild_version?: number
+          snapshot_date?: string
+          sold_qty?: number
+          stock_balance?: number
+          wastage_qty?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          last_purchase_date?: string | null
+          last_purchase_invoice_id?: string | null
+          last_purchase_margin_factor?: number | null
+          last_purchase_price?: number | null
+          last_rebuild_at?: string
+          opening_qty?: number
+          purchased_qty?: number
+          rebuild_version?: number
+          snapshot_date?: string
+          sold_qty?: number
+          stock_balance?: number
+          wastage_qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "computed_snapshots_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: true
+            referencedRelation: "items_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -421,6 +483,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      rebuild_metadata: {
+        Row: {
+          created_at: string
+          id: string
+          items_processed: number
+          last_rebuild_at: string | null
+          rebuild_version: number
+          singleton_id: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          items_processed?: number
+          last_rebuild_at?: string | null
+          rebuild_version?: number
+          singleton_id?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          items_processed?: number
+          last_rebuild_at?: string | null
+          rebuild_version?: number
+          singleton_id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
       }
       sales_headers: {
         Row: {

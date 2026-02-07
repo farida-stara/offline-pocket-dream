@@ -33,6 +33,7 @@ import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoice
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
+import { RebuildButton } from "@/components/RebuildButton";
 
 
 const SalesDetails = () => {
@@ -129,12 +130,9 @@ const SalesDetails = () => {
   }, [sale]);
 
   const itemIdsForInvoice = useMemo(() => (sale?.lines ?? []).map((l: any) => l.item_id).filter(Boolean), [sale?.lines]);
-  // رصيد المخزن لا يُحسب تلقائياً - يعتمد على الكاش أو زر التحديث الشامل
+  // يقرأ من اللقطات المحسوبة فقط - بدون أي حسابات تلقائية
   const { data: stockPricingMap } = useSalesStockPricing({
     itemIds: itemIdsForInvoice,
-    invoiceDate: sale?.header?.invoice_date,
-    excludeSalesHeaderId: id,
-    manualTrigger: false, // لا يجلب تلقائياً
   });
 
   const expectedSellingTotal = useMemo(() => {
@@ -524,7 +522,8 @@ const SalesDetails = () => {
           <Button variant="ghost" onClick={() => navigate("/sales")}>
             <ArrowRight className="h-5 w-5" />
           </Button>
-          <h1 className="text-3xl font-bold text-slate-900">تفاصيل فاتورة المبيعات</h1>
+          <h1 className="text-3xl font-bold text-foreground">تفاصيل فاتورة المبيعات</h1>
+          <RebuildButton variant="icon" />
           <div className="ms-auto flex gap-2">
             {!editing ? (
               <>
