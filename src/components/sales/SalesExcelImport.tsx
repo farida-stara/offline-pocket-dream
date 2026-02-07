@@ -121,11 +121,9 @@ const InvoicePreviewCard = ({
     [inv.lines]
   );
 
-  // رصيد المخزن لا يُحسب تلقائياً - يعتمد على الكاش أو زر التحديث الشامل
+  // يقرأ من اللقطات المحسوبة فقط - بدون أي حسابات تلقائية
   const { data: stockPricingMap } = useSalesStockPricing({
     itemIds: itemIdsForInvoice,
-    invoiceDate: inv.invoiceDate,
-    manualTrigger: false, // لا يجلب تلقائياً
   });
 
   const expectedSellingTotal = useMemo(() => {

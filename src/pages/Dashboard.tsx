@@ -1,44 +1,62 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2, UserCog, RefreshCw } from "lucide-react";
+import { Package, ShoppingCart, TrendingUp, Users, Warehouse, DollarSign, LogOut, ListChecks, Building2, CreditCard, Trash2, UserCog, RefreshCw, Database, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { fullDataRebuild, getRebuildStatus, RebuildProgress } from "@/lib/fullDataRebuild";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [refreshing, setRefreshing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [progress, setProgress] = useState<RebuildProgress | null>(null);
 
-  const handleGlobalRefresh = async () => {
-    setRefreshing(true);
+  // جلب حالة آخر إعادة بناء
+  const { data: rebuildStatus, refetch: refetchStatus } = useQuery({
+    queryKey: ["rebuild-status"],
+    queryFn: getRebuildStatus,
+    staleTime: Infinity,
+    refetchOnMount: false,
+  });
+
+  /**
+   * إعادة بناء البيانات الشاملة
+   * هذا هو المكان الوحيد لتنفيذ كل الحسابات
+   */
+  const handleFullDataRebuild = async () => {
+    setRebuilding(true);
+    setProgress(null);
+    
     try {
-      // Invalidate and refetch all major caches
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["items"] }),
-        queryClient.invalidateQueries({ queryKey: ["suppliers"] }),
-        queryClient.invalidateQueries({ queryKey: ["customers"] }),
-        queryClient.invalidateQueries({ queryKey: ["sales-reps"] }),
-        queryClient.invalidateQueries({ queryKey: ["purchases"] }),
-        queryClient.invalidateQueries({ queryKey: ["sales"] }),
-        queryClient.invalidateQueries({ queryKey: ["wastage"] }),
-        queryClient.invalidateQueries({ queryKey: ["opening-stock"] }),
-        queryClient.invalidateQueries({ queryKey: ["payment-ledger"] }),
-        queryClient.invalidateQueries({ queryKey: ["inventory-report"] }),
-        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("purchase-details") }),
-        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("sales-details") }),
-        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("sales-stock-pricing") }),
-        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes("wastage-details") }),
-      ]);
-      toast.success("تم تحديث جميع البيانات والكاش بنجاح");
+      const result = await fullDataRebuild((p) => setProgress(p));
+      
+      if (result.success) {
+        // تحديث الكاش بعد إعادة البناء
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["computed-snapshots"] }),
+          queryClient.invalidateQueries({ queryKey: ["rebuild-status"] }),
+          queryClient.invalidateQueries({ queryKey: ["inventory-report"] }),
+        ]);
+        
+        toast.success(
+          `تم إعادة بناء البيانات بنجاح - ${result.itemsProcessed} صنف (الإصدار ${result.rebuildVersion})`
+        );
+        refetchStatus();
+      } else {
+        toast.error("فشل إعادة بناء البيانات: " + result.error);
+      }
     } catch (e: any) {
-      toast.error("حدث خطأ أثناء التحديث: " + (e?.message || ""));
+      toast.error("حدث خطأ أثناء إعادة البناء: " + (e?.message || ""));
     } finally {
-      setRefreshing(false);
+      setRebuilding(false);
+      setProgress(null);
     }
   };
 
@@ -136,17 +154,54 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted p-6" dir="rtl">
       <div className="max-w-7xl mx-auto">
+        {/* تحذير إذا لم يتم إعادة البناء من قبل */}
+        {rebuildStatus && !rebuildStatus.hasRebuild && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>تنبيه هام</AlertTitle>
+            <AlertDescription>
+              لم يتم تنفيذ إعادة بناء البيانات بعد. يرجى النقر على زر "إعادة بناء البيانات الشاملة" للحصول على حسابات المخزون.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* شريط التقدم أثناء إعادة البناء */}
+        {rebuilding && progress && (
+          <Alert className="mb-4">
+            <Database className="h-4 w-4" />
+            <AlertTitle>جاري إعادة بناء البيانات...</AlertTitle>
+            <AlertDescription className="mt-2">
+              <p className="mb-2">{progress.step}</p>
+              <Progress value={(progress.current / progress.total) * 100} className="h-2" />
+              <p className="text-xs text-muted-foreground mt-1">
+                الخطوة {progress.current} من {progress.total}
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-4xl font-bold text-foreground mb-2">نظام إدارة المخزون</h1>
             <p className="text-muted-foreground">مرحباً بك في نظام إدارة المخزون والمبيعات</p>
             {user?.email ? <p className="text-xs text-muted-foreground mt-2">{user.email}</p> : null}
+            {rebuildStatus?.hasRebuild && (
+              <p className="text-xs text-muted-foreground mt-1">
+                آخر إعادة بناء: {new Date(rebuildStatus.lastRebuildAt!).toLocaleString("ar-KW")} 
+                {" "}(الإصدار {rebuildStatus.rebuildVersion} - {rebuildStatus.itemsProcessed} صنف)
+              </p>
+            )}
           </div>
 
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleGlobalRefresh} disabled={refreshing} className="w-fit">
-              <RefreshCw className={`h-4 w-4 ml-2 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "جاري التحديث..." : "تحديث شامل للبيانات"}
+            <Button 
+              variant="default" 
+              onClick={handleFullDataRebuild} 
+              disabled={rebuilding} 
+              className="w-fit bg-primary"
+            >
+              <Database className={`h-4 w-4 ml-2 ${rebuilding ? "animate-pulse" : ""}`} />
+              {rebuilding ? "جاري إعادة البناء..." : "إعادة بناء البيانات الشاملة"}
             </Button>
             <Button variant="outline" onClick={onLogout} className="w-fit">
               <LogOut className="h-4 w-4 ml-2" />
