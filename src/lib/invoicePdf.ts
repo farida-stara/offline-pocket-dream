@@ -1,7 +1,29 @@
-import pdfMake from "pdfmake/build/pdfmake";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - pdfmake types are complex
+import * as pdfMakeModule from "pdfmake/build/pdfmake";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - pdfmake fonts module has no proper TS types
 import * as pdfFontsModule from "pdfmake/build/vfs_fonts";
+
+// Get the actual pdfMake instance - handle various Vite/ESM wrapping patterns
+const pdfMake: any = (pdfMakeModule as any)?.default || (pdfMakeModule as any)?.pdfMake || pdfMakeModule;
+
+// Initialize VFS from pdfFonts module
+const initVfs = (): Record<string, string> => {
+  const mod: any = pdfFontsModule as any;
+  return (
+    mod?.pdfMake?.vfs ||
+    mod?.default?.pdfMake?.vfs ||
+    mod?.vfs ||
+    mod?.default?.vfs ||
+    {}
+  );
+};
+
+// Set initial VFS
+if (pdfMake && !pdfMake.vfs) {
+  pdfMake.vfs = initVfs();
+}
 
 type PdfLine = {
   itemName: string;
@@ -31,19 +53,20 @@ export type PdfInvoice = {
   lines: PdfLine[];
 };
 
-function getBuiltinVfs(): Record<string, string> {
-  const mod: any = pdfFontsModule as any;
-  return (
-    mod?.pdfMake?.vfs ||
-    mod?.default?.pdfMake?.vfs ||
-    mod?.vfs ||
-    mod?.default?.vfs ||
-    {}
-  );
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  // Avoid spread/apply on large arrays (can throw in some browsers)
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x2000; // 8192
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j]);
+  }
+  return btoa(binary);
 }
 
 async function getBuiltinVfsAsync(): Promise<Record<string, string>> {
-  const direct = getBuiltinVfs();
+  const direct = initVfs();
   if (Object.keys(direct).length) return direct;
 
   // Vite/ESM can sometimes wrap/optimize CommonJS in a way that makes the static import
@@ -64,24 +87,28 @@ async function getBuiltinVfsAsync(): Promise<Record<string, string>> {
   }
 }
 
-function pickAnyExistingVfs(): Record<string, string> {
-  for (const t of getPdfMakeTargets()) {
-    const v = t?.vfs;
-    if (v && typeof v === "object" && Object.keys(v).length) return v;
-  }
-  return {};
+// Cached VFS and fonts to apply before every createPdf call
+let cachedVfs: Record<string, string> = {};
+let cachedFonts: any = {};
+
+function updateVfsCache(vfs: Record<string, string>) {
+  cachedVfs = { ...vfs };
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  // Avoid spread/apply on large arrays (can throw in some browsers)
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x2000; // 8192
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j]);
+function updateFontsCache(fonts: any) {
+  cachedFonts = { ...fonts };
+}
+
+function pickAnyExistingVfs(): Record<string, string> {
+  // Check the main pdfMake instance first
+  if (pdfMake?.vfs && Object.keys(pdfMake.vfs).length) {
+    return pdfMake.vfs;
   }
-  return btoa(binary);
+  // Also check cached
+  if (Object.keys(cachedVfs).length) {
+    return cachedVfs;
+  }
+  return {};
 }
 
 let arabicFontReady: Promise<void> | null = null;
@@ -101,6 +128,7 @@ export type ArabicPdfFontHealth =
       targets: number;
     };
 
+
 function getPdfMakeTargets(): any[] {
   // IMPORTANT: Avoid circular calls with getPdfMakeInstance().
   const t: any[] = [];
@@ -108,36 +136,81 @@ function getPdfMakeTargets(): any[] {
   if (pm) t.push(pm);
   if (pm?.default) t.push(pm.default);
   if (pm?.pdfMake) t.push(pm.pdfMake);
+  if (pm?.default?.pdfMake) t.push(pm.default.pdfMake);
   const globalPm: any = (globalThis as any)?.pdfMake;
   if (globalPm) t.push(globalPm);
+  const windowPm: any = typeof window !== "undefined" ? (window as any)?.pdfMake : null;
+  if (windowPm) t.push(windowPm);
 
   // Add the chosen instance too (if different), but WITHOUT creating recursion.
-  const inst = getPdfMakeInstance();
+  const inst = getPdfMakeInstanceRaw();
   if (inst) t.push(inst);
 
   // de-duplicate
-  return Array.from(new Set(t));
+  return Array.from(new Set(t.filter(Boolean)));
 }
 
 function setPdfMakeVfs(nextVfs: Record<string, string>) {
+  // Cache for later use in getPdfMakeInstance
+  updateVfsCache(nextVfs);
+  
   for (const t of getPdfMakeTargets()) {
     t.vfs = nextVfs;
   }
+  // Also set on the raw import directly
+  const pm: any = pdfMake as any;
+  if (pm) pm.vfs = nextVfs;
+  if (pm?.default) pm.default.vfs = nextVfs;
+  if (pm?.pdfMake) pm.pdfMake.vfs = nextVfs;
+  if (pm?.default?.pdfMake) pm.default.pdfMake.vfs = nextVfs;
 }
 
 function setPdfMakeFonts(nextFonts: any) {
+  // Cache for later use in getPdfMakeInstance
+  updateFontsCache(nextFonts);
+  
   for (const t of getPdfMakeTargets()) {
     t.fonts = nextFonts;
   }
+  // Also set on the raw import directly
+  const pm: any = pdfMake as any;
+  if (pm) pm.fonts = nextFonts;
+  if (pm?.default) pm.default.fonts = nextFonts;
+  if (pm?.pdfMake) pm.pdfMake.fonts = nextFonts;
+  if (pm?.default?.pdfMake) pm.default.pdfMake.fonts = nextFonts;
+}
+
+function getPdfMakeInstanceRaw(): any {
+  // Raw instance finder - no VFS/fonts application
+  const pm: any = pdfMake as any;
+  const globalPm: any = (globalThis as any)?.pdfMake;
+  const windowPm: any = typeof window !== "undefined" ? (window as any)?.pdfMake : null;
+
+  const candidates = [
+    pm,
+    pm?.default,
+    pm?.pdfMake,
+    pm?.default?.pdfMake,
+    globalPm,
+    windowPm,
+  ].filter(Boolean);
+  
+  return candidates.find((t) => typeof t?.createPdf === "function") || pm;
 }
 
 function getPdfMakeInstance(): any {
-  // IMPORTANT: Must NOT call getPdfMakeTargets() to avoid recursion.
-  const pm: any = pdfMake as any;
-  const globalPm: any = (globalThis as any)?.pdfMake;
-
-  const candidates = [pm, pm?.default, pm?.pdfMake, globalPm].filter(Boolean);
-  return candidates.find((t) => typeof t?.createPdf === "function") || pm;
+  const instance = getPdfMakeInstanceRaw();
+  
+  // CRITICAL: Apply cached VFS and fonts directly to the instance before returning
+  // This ensures the instance used for createPdf has the font data
+  if (instance && Object.keys(cachedVfs).length) {
+    instance.vfs = { ...cachedVfs };
+  }
+  if (instance && Object.keys(cachedFonts).length) {
+    instance.fonts = { ...cachedFonts };
+  }
+  
+  return instance;
 }
 
 async function ensureArabicFont() {
