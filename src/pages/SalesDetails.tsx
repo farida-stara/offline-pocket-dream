@@ -432,20 +432,22 @@ const SalesDetails = () => {
   };
 
   const handlePreviewPdf = async () => {
+    const win = openPdfWindow();
+    if (!win) {
+      toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+      return;
+    }
+
     try {
-      // Open a window synchronously to avoid popup blockers.
-      const win = window.open("", "_blank");
-      if (!win) {
-        toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
-        return;
-      }
       setPdfPending(true);
       const blob = await getSingleInvoicePdfBlob(buildPdfPayload());
-      const url = URL.createObjectURL(blob);
-      win.location.href = url;
-      // Revoke after a bit to avoid memory leaks.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      openPdfBlobInWindow(blob, { mode: "preview", targetWindow: win });
     } catch (e: any) {
+      try {
+        win.close();
+      } catch {
+        // ignore
+      }
       toast.error("تعذر فتح معاينة PDF: " + (e?.message || "خطأ غير معروف"));
     } finally {
       setPdfPending(false);
@@ -453,32 +455,21 @@ const SalesDetails = () => {
   };
 
   const handlePrintPdf = async () => {
+    const win = openPdfWindow();
+    if (!win) {
+      toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+      return;
+    }
+
     try {
-      // Open a window synchronously to avoid popup blockers.
-      const win = window.open("", "_blank");
-      if (!win) {
-        toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
-        return;
-      }
       setPdfPending(true);
-      const blob = await getSingleInvoicePdfBlob(buildPdfPayload());
-      const url = URL.createObjectURL(blob);
-      win.location.href = url;
-      // Wait for the document to load then trigger print.
-      win.addEventListener(
-        "load",
-        () => {
-          try {
-            win.focus();
-            win.print();
-          } catch {
-            // ignore
-          }
-        },
-        { once: true },
-      );
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await printSingleInvoicePdf(buildPdfPayload(), win);
     } catch (e: any) {
+      try {
+        win.close();
+      } catch {
+        // ignore
+      }
       toast.error("تعذر طباعة PDF: " + (e?.message || "خطأ غير معروف"));
     } finally {
       setPdfPending(false);
