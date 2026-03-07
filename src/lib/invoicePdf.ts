@@ -449,13 +449,13 @@ export async function downloadSingleInvoicePdf(inv: PdfInvoice) {
 }
 
 export async function openSingleInvoicePdf(inv: PdfInvoice) {
-  const pdf = await getSingleInvoicePdf(inv);
-  pdf.open();
+  const blob = await getSingleInvoicePdfBlob(inv);
+  openPdfBlobInWindow(blob, { mode: "preview" });
 }
 
-export async function printSingleInvoicePdf(inv: PdfInvoice) {
-  const pdf = await getSingleInvoicePdf(inv);
-  pdf.print();
+export async function printSingleInvoicePdf(inv: PdfInvoice, targetWindow?: Window) {
+  const blob = await getSingleInvoicePdfBlob(inv);
+  openPdfBlobInWindow(blob, { mode: "print", targetWindow });
 }
 
 export async function getSingleInvoicePdf(inv: PdfInvoice) {
@@ -498,12 +498,57 @@ function pdfToBlob(pdf: any): Promise<Blob> {
 }
 
 /**
+ * Open a popup window synchronously from the click handler,
+ * then pass it to print/open helpers to avoid popup blockers.
+ */
+export function openPdfWindow(): Window | null {
+  if (typeof window === "undefined") return null;
+  return window.open("", "_blank");
+}
+
+/**
  * Generate a Blob for an invoice PDF.
  * Useful when you need to render/print in a window opened synchronously (to avoid popup blockers).
  */
 export async function getSingleInvoicePdfBlob(inv: PdfInvoice): Promise<Blob> {
   const pdf = await getSingleInvoicePdf(inv);
   return pdfToBlob(pdf);
+}
+
+type OpenPdfBlobOptions = {
+  mode?: "preview" | "print";
+  targetWindow?: Window;
+  revokeAfterMs?: number;
+};
+
+export function openPdfBlobInWindow(blob: Blob, options: OpenPdfBlobOptions = {}): Window {
+  const { mode = "preview", targetWindow, revokeAfterMs = 60_000 } = options;
+  const win = targetWindow ?? openPdfWindow();
+  if (!win) {
+    throw new Error("تعذر فتح نافذة PDF. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+  }
+
+  const url = URL.createObjectURL(blob);
+
+  if (mode === "print") {
+    win.addEventListener(
+      "load",
+      () => {
+        try {
+          win.focus();
+          win.print();
+        } catch {
+          // ignore
+        }
+      },
+      { once: true },
+    );
+  }
+
+  win.location.href = url;
+  setTimeout(() => URL.revokeObjectURL(url), revokeAfterMs);
+
+  return win;
 }
 
 export async function downloadInvoicesPdf(fileName: string, invoices: PdfInvoice[]) {
