@@ -368,8 +368,7 @@ const SalesDetails = () => {
   const handleRefreshAndPreview = async () => {
     if (!id) return;
 
-    // Open a window synchronously to avoid popup blockers.
-    const win = window.open("", "_blank");
+    const win = openPdfWindow();
     if (!win) {
       toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
       return;
@@ -407,9 +406,7 @@ const SalesDetails = () => {
       });
 
       const blob = await getSingleInvoicePdfBlob(payload);
-      const url = URL.createObjectURL(blob);
-      win.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      openPdfBlobInWindow(blob, { mode: "preview", targetWindow: win });
     } catch (e: any) {
       try {
         win.close();
