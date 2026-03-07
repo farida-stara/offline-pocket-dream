@@ -416,10 +416,28 @@ const SalesList = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
-                              <DropdownMenuItem onClick={() => printOneMutation.mutate({ id: s.id, mode: "full" })}>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  const popupWindow = openPdfWindow();
+                                  if (!popupWindow) {
+                                    toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+                                    return;
+                                  }
+                                  printOneMutation.mutate({ id: s.id, mode: "full", popupWindow });
+                                }}
+                              >
                                 طباعة PDF (كاملة)
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => printOneMutation.mutate({ id: s.id, mode: "short" })}>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  const popupWindow = openPdfWindow();
+                                  if (!popupWindow) {
+                                    toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+                                    return;
+                                  }
+                                  printOneMutation.mutate({ id: s.id, mode: "short", popupWindow });
+                                }}
+                              >
                                 طباعة PDF (مختصرة)
                               </DropdownMenuItem>
                             </DropdownMenuContent>
