@@ -29,7 +29,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
+import { downloadSingleInvoicePdf, openPdfBlobInWindow, openPdfWindow, printSingleInvoicePdf } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import { useSalesStockPricing } from "@/hooks/useSalesStockPricing";
 import { StockBalanceBreakdownDialog } from "@/components/sales/StockBalanceBreakdownDialog";
