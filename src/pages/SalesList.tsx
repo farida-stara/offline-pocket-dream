@@ -27,7 +27,7 @@ import { ArrowRight, Search, Plus, Eye, Trash2, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadInvoicesPdf, downloadSingleInvoicePdf } from "@/lib/invoicePdf";
+import { downloadInvoicesPdf, openPdfWindow, printSingleInvoicePdf } from "@/lib/invoicePdf";
 import { getDisplayQuantities } from "@/lib/salesLineQuantities";
 import {
   DropdownMenu,
