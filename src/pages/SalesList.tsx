@@ -189,7 +189,7 @@ const SalesList = () => {
   });
 
   const printOneMutation = useMutation({
-    mutationFn: async ({ id, mode }: { id: string; mode: "full" | "short" }) => {
+    mutationFn: async ({ id, mode, popupWindow }: { id: string; mode: "full" | "short"; popupWindow?: Window | null }) => {
       const { data: header, error: headerError } = await supabase
         .from("sales_headers")
         .select(
@@ -223,30 +223,33 @@ const SalesList = () => {
             })
           : (lines ?? []);
 
-      await downloadSingleInvoicePdf({
-        title: "فاتورة مبيعات",
-        invoiceNo: header.invoice_no,
-        date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
-        partyLabel: "العميل",
-        partyName: header.customer?.customer_name || "مجهول",
-        paymentMethod:
-          header.sales_rep?.rep_name && header.rep_collects
-            ? `${header.payment_method || "-"} | مندوب التحصيل: ${header.sales_rep.rep_name}`
-            : header.sales_rep?.rep_name
-              ? `${header.payment_method || "-"} | المندوب: ${header.sales_rep.rep_name}`
-              : header.payment_method || "-",
-        notes: header.notes || "",
-        totals: {
-          totalAmount: Number(header.total_amount || 0),
+      await printSingleInvoicePdf(
+        {
+          title: "فاتورة مبيعات",
+          invoiceNo: header.invoice_no,
+          date: format(new Date(header.invoice_date), "yyyy-MM-dd"),
+          partyLabel: "العميل",
+          partyName: header.customer?.customer_name || "مجهول",
+          paymentMethod:
+            header.sales_rep?.rep_name && header.rep_collects
+              ? `${header.payment_method || "-"} | مندوب التحصيل: ${header.sales_rep.rep_name}`
+              : header.sales_rep?.rep_name
+                ? `${header.payment_method || "-"} | المندوب: ${header.sales_rep.rep_name}`
+                : header.payment_method || "-",
+          notes: header.notes || "",
+          totals: {
+            totalAmount: Number(header.total_amount || 0),
+          },
+          lines: filtered.map((l: any) => ({
+            itemName: l.item?.item_name || l.item?.item_code || "-",
+            qty: Number(l.quantity ?? 0),
+            quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
+            unitPrice: Number(l.unit_price ?? 0),
+            lineTotal: Number(l.line_total || Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)),
+          })),
         },
-        lines: filtered.map((l: any) => ({
-          itemName: l.item?.item_name || l.item?.item_code || "-",
-          qty: Number(l.quantity ?? 0),
-          quantities: getDisplayQuantities({ quantity: l.quantity, notes: l.notes ?? null }),
-          unitPrice: Number(l.unit_price ?? 0),
-          lineTotal: Number(l.line_total || Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)),
-        })),
-      });
+        popupWindow ?? undefined,
+      );
     },
     onError: (e: any) => toast.error("تعذر طباعة الفاتورة: " + (e?.message || "خطأ غير معروف")),
   });
