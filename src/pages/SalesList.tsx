@@ -188,8 +188,8 @@ const SalesList = () => {
     onError: (e: any) => toast.error("تعذر إنشاء PDF: " + (e?.message || "خطأ غير معروف")),
   });
 
-  const printOneMutation = useMutation({
-    mutationFn: async ({ id, mode, popupWindow }: { id: string; mode: "full" | "short"; popupWindow?: Window | null }) => {
+  const handlePrintOne = async (id: string, mode: "full" | "short", popupWindow: Window) => {
+    try {
       const { data: header, error: headerError } = await supabase
         .from("sales_headers")
         .select(
@@ -248,11 +248,13 @@ const SalesList = () => {
             lineTotal: Number(l.line_total || Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)),
           })),
         },
-        popupWindow ?? undefined,
+        popupWindow,
       );
-    },
-    onError: (e: any) => toast.error("تعذر طباعة الفاتورة: " + (e?.message || "خطأ غير معروف")),
-  });
+    } catch (e: any) {
+      toast.error("تعذر طباعة الفاتورة: " + (e?.message || "خطأ غير معروف"));
+      try { popupWindow.close(); } catch {}
+    }
+  };
 
   return (
     <div
@@ -423,7 +425,7 @@ const SalesList = () => {
                                     toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
                                     return;
                                   }
-                                  printOneMutation.mutate({ id: s.id, mode: "full", popupWindow });
+                                  handlePrintOne(s.id, "full", popupWindow);
                                 }}
                               >
                                 طباعة PDF (كاملة)
@@ -435,7 +437,7 @@ const SalesList = () => {
                                     toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
                                     return;
                                   }
-                                  printOneMutation.mutate({ id: s.id, mode: "short", popupWindow });
+                                  handlePrintOne(s.id, "short", popupWindow);
                                 }}
                               >
                                 طباعة PDF (مختصرة)
