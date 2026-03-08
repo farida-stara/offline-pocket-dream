@@ -405,6 +405,9 @@ const PurchaseDetails = () => {
                 >
                   تحميل PDF
                 </Button>
+                <Button type="button" variant="outline" onClick={handlePrintPdf} disabled={pdfPending}>
+                  طباعة
+                </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
                 </Button>
