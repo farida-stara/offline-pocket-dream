@@ -28,7 +28,7 @@ import { ArrowRight, Loader2, Plus, Save, X, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { deleteInvoice } from "@/lib/invoiceDelete";
-import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob } from "@/lib/invoicePdf";
+import { downloadSingleInvoicePdf, getSingleInvoicePdfBlob, openPdfBlobInWindow, openPdfWindow, printSingleInvoicePdf } from "@/lib/invoicePdf";
 import { RebuildButton } from "@/components/RebuildButton";
 
 
@@ -306,8 +306,7 @@ const PurchaseDetails = () => {
   const handleRefreshAndPreview = async () => {
     if (!id) return;
 
-    // Open synchronously to avoid popup blockers.
-    const win = window.open("", "_blank");
+    const win = openPdfWindow();
     if (!win) {
       toast.error("المتصفح منع فتح نافذة المعاينة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
       return;
@@ -328,9 +327,7 @@ const PurchaseDetails = () => {
 
       const payload = buildPdfPayloadFromPurchase(freshPurchase);
       const blob = await getSingleInvoicePdfBlob(payload);
-      const url = URL.createObjectURL(blob);
-      win.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      openPdfBlobInWindow(blob, { mode: "preview", targetWindow: win });
     } catch (e: any) {
       try {
         win.close();
@@ -341,6 +338,28 @@ const PurchaseDetails = () => {
     } finally {
       setPdfPending(false);
       setRefreshPending(false);
+    }
+  };
+
+  const handlePrintPdf = async () => {
+    const win = openPdfWindow();
+    if (!win) {
+      toast.error("المتصفح منع فتح نافذة الطباعة. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
+      return;
+    }
+
+    try {
+      setPdfPending(true);
+      await printSingleInvoicePdf(buildPdfPayloadFromPurchase({ header, lines, expectedTotal }), win);
+    } catch (e: any) {
+      try {
+        win.close();
+      } catch {
+        // ignore
+      }
+      toast.error("تعذر طباعة PDF: " + (e?.message || "خطأ غير معروف"));
+    } finally {
+      setPdfPending(false);
     }
   };
 
@@ -385,6 +404,9 @@ const PurchaseDetails = () => {
                   }
                 >
                   تحميل PDF
+                </Button>
+                <Button type="button" variant="outline" onClick={handlePrintPdf} disabled={pdfPending}>
+                  طباعة
                 </Button>
                 <Button type="button" variant="outline" onClick={startEdit}>
                   تعديل
