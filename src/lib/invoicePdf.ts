@@ -522,7 +522,7 @@ type OpenPdfBlobOptions = {
 };
 
 export function openPdfBlobInWindow(blob: Blob, options: OpenPdfBlobOptions = {}): Window {
-  const { mode = "preview", targetWindow, revokeAfterMs = 60_000 } = options;
+  const { mode = "preview", targetWindow, revokeAfterMs = 120_000 } = options;
   const win = targetWindow ?? openPdfWindow();
   if (!win) {
     throw new Error("تعذر فتح نافذة PDF. الرجاء السماح بالنوافذ المنبثقة ثم إعادة المحاولة.");
@@ -531,23 +531,31 @@ export function openPdfBlobInWindow(blob: Blob, options: OpenPdfBlobOptions = {}
   const url = URL.createObjectURL(blob);
 
   if (mode === "print") {
-    win.addEventListener(
-      "load",
-      () => {
-        try {
-          win.focus();
-          win.print();
-        } catch {
-          // ignore
-        }
-      },
-      { once: true },
-    );
+    // Write an HTML page that embeds the PDF and auto-prints once loaded.
+    // This is far more reliable than listening for `load` on a blob-URL navigation.
+    win.document.open();
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>طباعة</title></head>
+      <body style="margin:0">
+        <embed src="${url}" type="application/pdf" width="100%" height="100%" style="position:fixed;top:0;left:0;width:100%;height:100%;" />
+        <script>
+          // Give the PDF viewer time to render, then trigger print
+          setTimeout(function() {
+            window.focus();
+            window.print();
+          }, 600);
+        </script>
+      </body>
+      </html>
+    `);
+    win.document.close();
+  } else {
+    win.location.href = url;
   }
 
-  win.location.href = url;
   setTimeout(() => URL.revokeObjectURL(url), revokeAfterMs);
-
   return win;
 }
 
