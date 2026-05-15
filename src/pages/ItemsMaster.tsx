@@ -358,8 +358,19 @@ const ItemsMaster = () => {
       throw new Error("لم يتم العثور على عمود اسم الصنف");
     }
 
+    // Fetch ALL existing codes from DB (not limited to current view) to avoid conflicts
+    const { data: allExisting, error: existingErr } = await supabase
+      .from("items_master")
+      .select("item_code, item_name")
+      .limit(100000);
+    if (existingErr) throw existingErr;
+    const dbCodes = new Set((allExisting ?? []).map((r: any) => normalizeArabic(r.item_code)));
+    const dbNames = new Set((allExisting ?? []).map((r: any) => normalizeArabic(r.item_name)));
+
     const dataRows = rows.slice(headerRowIndex + 1);
     const toInsert: any[] = [];
+    const seenCodes = new Set<string>();
+    const seenNames = new Set<string>();
     let skipped = 0;
 
     for (const r of dataRows) {
@@ -368,12 +379,19 @@ const ItemsMaster = () => {
 
       const codeRaw = colCode !== -1 ? String(r?.[colCode] ?? "").trim() : "";
       const code = codeRaw || `AUTO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      const nName = normalizeArabic(nameRaw);
+      const nCode = normalizeArabic(code);
 
-      // Skip if name or code already exists
-      if (existingNames.has(normalizeArabic(nameRaw)) || existingCodes.has(normalizeArabic(code))) {
+      // Skip if duplicate in DB or already queued in this batch
+      if (
+        dbCodes.has(nCode) || dbNames.has(nName) ||
+        seenCodes.has(nCode) || seenNames.has(nName)
+      ) {
         skipped++;
         continue;
       }
+      seenCodes.add(nCode);
+      seenNames.add(nName);
 
       toInsert.push({
         item_code: code,
@@ -395,14 +413,35 @@ const ItemsMaster = () => {
       return;
     }
 
-    const { error } = await supabase.from("items_master").insert(toInsert);
-    if (error) throw error;
+    // Insert in chunks with upsert (ignoreDuplicates) so a single conflict doesn't fail the whole batch
+    const CHUNK = 200;
+    let inserted = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK);
+      const { error, data } = await supabase
+        .from("items_master")
+        .upsert(chunk, { onConflict: "item_code", ignoreDuplicates: true })
+        .select("id");
+      if (error) {
+        failed += chunk.length;
+        errors.push(error.message);
+      } else {
+        inserted += data?.length ?? chunk.length;
+      }
+    }
 
     queryClient.invalidateQueries({ queryKey: ["items-master"] });
     queryClient.invalidateQueries({ queryKey: ["items"] });
-    
-    let msg = `تم استيراد ${toInsert.length} صنف بنجاح`;
+
+    if (inserted === 0 && failed > 0) {
+      throw new Error(errors[0] || "فشل الإدراج");
+    }
+
+    let msg = `تم استيراد ${inserted} صنف بنجاح`;
     if (skipped > 0) msg += ` (تم تخطي ${skipped} مكرر)`;
+    if (failed > 0) msg += ` — فشل ${failed}: ${errors[0] ?? ""}`;
     toast.success(msg);
   };
 
